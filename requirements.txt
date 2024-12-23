@@ -10,8 +10,10 @@ rouge
 fuzzywuzzy
 python-Levenshtein
 protobuf
--i https://pypi.org/simple/ bitsandbytes
+bitsandbytes
 openai
 anthropic
 seaborn
 matplotlib
+debugpy
+pyav
