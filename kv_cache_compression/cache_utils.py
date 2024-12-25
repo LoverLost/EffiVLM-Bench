@@ -423,7 +423,21 @@ class streamingLLMCache(Cache):
         return self.key_cache[layer_idx], self.value_cache[layer_idx]
 
     
-    
+    def reupdate(self,
+        key_states: torch.Tensor,
+        value_states: torch.Tensor,
+        layer_idx: int,
+        cache_kwargs: Optional[Dict[str, Any]] = None,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        
+        self.key_cache[layer_idx] = key_states
+        self.value_cache[layer_idx] = value_states
+
+        return self.key_cache[layer_idx], self.value_cache[layer_idx]
+        
+        
+        
+        
     def get_seq_length(self, layer_idx: Optional[int] = 0) -> int:
         """Returns the sequence length of the cached states. A layer index can be optionally passed."""
         # TODO: deprecate this function in favor of `cache_position`
