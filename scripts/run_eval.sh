@@ -5,10 +5,10 @@
 
 
 TASK=$1
-# CKPT_PATH=$2
+CKPT_PATH=$2
 # CONV_TEMPLATE=$3
 # MODEL_NAME=$4
-METHDO=$2
+METHDO=$3
 echo $TASK
 TASK_SUFFIX="${TASK//,/_}"
 echo $TASK_SUFFIX
@@ -22,4 +22,5 @@ accelerate launch --num_processes 1 --main_process_port 23415 -m lmms_eval \
     --log_samples \
     --log_samples_suffix $TASK_SUFFIX \
     --output_path /share/home/mhma/MLLM-Efficiency/logs/ \
+    --verbosity=DEBUG
     # --device_map 'auto' \

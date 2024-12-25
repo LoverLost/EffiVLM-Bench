@@ -6,7 +6,8 @@ import re
 import warnings
 from datetime import timedelta
 from typing import List, Optional, Tuple, Union
-
+import os
+import sys
 import numpy as np
 import PIL
 import torch
@@ -33,6 +34,7 @@ eval_logger = logging.getLogger("lmms-eval")
 # Enable TF32 for CUDA
 torch.backends.cuda.matmul.allow_tf32 = True
 
+# sys.path.append(os.path.abspath("/share/home/mhma/MLLM-Efficiency/llava"))
 # Import LLaVA modules
 try:
     from llava.constants import (
