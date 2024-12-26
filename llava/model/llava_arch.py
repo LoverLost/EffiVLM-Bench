@@ -445,6 +445,35 @@ class LlavaMetaForCausalLM(ABC):
         new_input_embeds = []
         new_labels = []
         cur_image_idx = 0
+        kv_cache_mask = []   # FIXME 标记了哪里是图片，哪里是文本。文本就是true，图片就是false
+        """
+        接下来这段代码是为了得到每个batch的图片和文本掩码，
+        即：
+        [True, True, True, False, False, False, True, True, True, False, False, False]
+        其中True代表文本，False代表图片
+        """
+        bsz = len(input_ids)
+        for i in range(bsz):  # 处理每个batch
+            kv_cache_mask.append([])
+            num_images = (input_ids[i] == IMAGE_TOKEN_INDEX).sum()
+            if num_images == 0:
+                kv_cache_mask[i].extend([True] * len(input_ids[i]))  # 全都是纯文本，都留下！
+                continue
+            else:
+                cur_input_ids = input_ids[i]   # [-1, 69, 92, 111, 137, 157, 167]
+                image_token_indices = [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
+                text_length_before_every_image = [image_token_indices[i] - image_token_indices[i - 1] - 1 for i in range(1, len(image_token_indices))]  # 这个列表最后一个值相当于是最后一张图片后有多少个文本
+                last_value = text_length_before_every_image.pop()
+
+                assert len(text_length_before_every_image) == num_images
+                for idx in range(len(text_length_before_every_image)):
+                    cur_image_length = image_features[idx].shape[0]  # 拿到了当前图片的length
+                    text_length = text_length_before_every_image[idx]  # 拿到了当前图片前面的文本长度
+                    kv_cache_mask[i].extend([True] * text_length)  # 当前图片前面的文本都标为True
+                    kv_cache_mask[i].extend([False] * cur_image_length)  # 当前图片标为False
+                kv_cache_mask[i].extend([True] * last_value)  # 最后一张图片后面的文本都标为True
+
+
         # rank_print("Inserting Images embedding")
         for batch_idx, cur_input_ids in enumerate(input_ids):
             num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
@@ -498,6 +527,7 @@ class LlavaMetaForCausalLM(ABC):
 
         new_input_embeds = [x[:tokenizer_model_max_length] for x, modality in zip(new_input_embeds, modalities)]
         new_labels = [x[:tokenizer_model_max_length] for x, modality in zip(new_labels, modalities)]
+        kv_cache_mask = [x[:tokenizer_model_max_length] for x in kv_cache_mask]   # 也得跟着截断
         # TODO: Hard code for control loss spike
         # if tokenizer_model_max_length is not None:
         #     new_input_embeds = [x[:4096] if modality != "video" else x[:tokenizer_model_max_length] for x, modality in zip(new_input_embeds, modalities)]
@@ -516,12 +546,14 @@ class LlavaMetaForCausalLM(ABC):
         for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)):
             cur_len = cur_new_embed.shape[0]
             if getattr(self.config, "tokenizer_padding_side", "right") == "left":
+                kv_cache_mask[i] = [True] * (max_len - cur_len) + kv_cache_mask[i]   # 补齐mask
                 new_input_embeds_padded.append(torch.cat((torch.zeros((max_len - cur_len, cur_new_embed.shape[1]), dtype=cur_new_embed.dtype, device=cur_new_embed.device), cur_new_embed), dim=0))
                 if cur_len > 0:
                     new_labels_padded[i, -cur_len:] = cur_new_labels
                     attention_mask[i, -cur_len:] = True
                     position_ids[i, -cur_len:] = torch.arange(0, cur_len, dtype=position_ids.dtype, device=position_ids.device)
             else:
+                kv_cache_mask[i] = kv_cache_mask[i] + [True] * (max_len - cur_len)
                 new_input_embeds_padded.append(torch.cat((cur_new_embed, torch.zeros((max_len - cur_len, cur_new_embed.shape[1]), dtype=cur_new_embed.dtype, device=cur_new_embed.device)), dim=0))
                 if cur_len > 0:
                     new_labels_padded[i, :cur_len] = cur_new_labels
@@ -552,7 +584,7 @@ class LlavaMetaForCausalLM(ABC):
             position_ids[:, split_position:] += right_add
         # import pdb; pdb.set_trace()
         # rank0_print("Finish preparing")
-        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels
+        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels, kv_cache_mask   # FIXME 增加了最后的返回值
 
     def initialize_vision_tokenizer(self, model_args, tokenizer):
         if model_args.mm_use_im_patch_token:

@@ -1,4 +1,5 @@
 import torch
+import transformers
 import torch.nn as nn
 import torch.nn.functional as F
 from typing import List, Optional, Tuple, Union
@@ -343,6 +344,125 @@ def qwen_attention_forward_H2O(
         attn_weights = None
     
     return attn_output, attn_weights, past_key_value
+
+
+def qwen_attention_forward_vlcache(
+    self,
+    hidden_states: torch.Tensor,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    past_key_value: Optional[Cache] = None,
+    output_attentions: bool = False,
+    use_cache: bool = False,
+    cache_position: Optional[torch.LongTensor] = None,
+    position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.45
+    **kwargs,
+) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+    
+    bsz, q_len, _ = hidden_states.size()
+    # get post_vision_size
+    if self.vlcache_post_vision_size == 0:
+        for index, value in enumerate(reversed(self.kv_cache_mask[0])):
+            if value is False:
+                transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_post_vision_size = index  
+                break
+
+    if self.vlcache_post_vision_size == 0:
+        raise ValueError(
+                f"post_vision_size is the token length of the problem and its value should be greater than 0. Please check the input."
+            )
+    
+    
+    input_shape = hidden_states.shape[:-1]
+    hidden_shape = (*input_shape, -1, self.head_dim)
+
+    query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)   # bsz, num_heads, q_len, head_dim
+    key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+    value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+
+    cos, sin = position_embeddings
+    query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+
+    kv_seq_len = key_states.shape[-2]
+    if past_key_value is not None:
+        if self.layer_idx is None:
+            raise ValueError(
+                f"The cache structure has changed since version v4.36. If you are using {self.__class__.__name__} "
+                "for auto-regressive decoding with k/v caching, please make sure to initialize the attention class "
+                "with a layer index."
+            )
+        kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
+
+
+    if past_key_value is not None:
+        # after prefill phase , allocate a budget for each head
+        if q_len == 1 and self.vlcache_first_after_prefill:
+            if self.layer_idx == 0 :
+                # get buget_layers and sorted_attn_kv_indices
+                buget_layers, sorted_attn_kv_indices = self.kv_cluster.get_budget_layer_and_sorted_attn_kv_indices(self.vlcache_sparsity_layer_tuple,self.vlcache_attn_weights_importance_tuple,self.vlcache_alpha_sparsity,query_states.shape[1],self.vlcache_different_window_per_layer,self.vlcache_head_adaptive)
+                transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_buget_layers = buget_layers
+                transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_sorted_attn_kv_indices = sorted_attn_kv_indices
+
+            # chage past_key_value using allocate_budget
+            self.kv_cluster.allocate_budget_and_update_kv(self.vlcache_buget_layers,self.vlcache_sorted_attn_kv_indices,self.vlcache_alpha_sparsity,self.layer_idx, past_key_value,self.vlcache_different_window_per_layer,self.vlcache_head_adaptive)
+            # change first_after_prefill to False
+            if self.layer_idx == query_states.shape[1] - 1:
+                transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_first_after_prefill = False
+
+        # sin and cos are specific to RoPE models; cache_position needed for the static cache
+        cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+        key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
+        # update kv_seq_len
+        kv_seq_len = key_states.shape[-2]
+
+    key_states = repeat_kv(key_states, self.num_key_value_groups)
+    value_states = repeat_kv(value_states, self.num_key_value_groups)
+    
+    attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+
+    # check attn_weights size
+    if attn_weights.size() != (bsz, self.num_heads, q_len, kv_seq_len):
+        raise ValueError(
+            f"Attention weights should be of size {(bsz, self.num_heads, q_len, kv_seq_len)}, but is"
+            f" {attn_weights.size()}"
+        )
+
+    if attention_mask is not None:  # no matter the length, we just slice it
+        causal_mask = attention_mask[:, :, :q_len, : kv_seq_len]
+        attn_weights = attn_weights + causal_mask
+
+    # upcast attention to fp32
+    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+    attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
+
+    # get sparsity_layer and attn_weights_importance form attn_weights
+    if q_len > 1 :
+        attn_weights_postvison = attn_weights[:, :, -self.vlcache_post_vision_size:, :]
+        sparsity_layer_tuple = self.kv_cluster.get_budget_layer(attn_weights_postvison, q_len, self.vlcache_post_vision_size)
+        attn_weights_importance_tuple = self.kv_cluster.get_token_importance(attn_weights_postvison)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_sparsity_layer_tuple += (sparsity_layer_tuple,)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_attn_weights_importance_tuple += (attn_weights_importance_tuple,)
+
+
+    attn_output = torch.matmul(attn_weights, value_states)
+
+    if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
+        raise ValueError(
+            f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
+            f" {attn_output.size()}"
+        )
+
+    attn_output = attn_output.transpose(1, 2).contiguous()
+    attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
+
+    attn_output = self.o_proj(attn_output)
+
+    if not output_attentions:
+        attn_weights = None
+    
+    
+    return attn_output, attn_weights, past_key_value
+
 
 
 @add_start_docstrings_to_model_forward(QWEN2_INPUTS_DOCSTRING)
