@@ -38,13 +38,13 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=42, help="")
     parser.add_argument("--base_dir", type=str, default="")
     parser.add_argument("--dataset", type=str, default="coco", help="")
-    parser.add_argument("--data_folder", type=str, default="/share/home/mhma/datasets/after_process/sharegpt4v_coco/")
+    parser.add_argument("--data_folder", type=str, default="/home/zxwang/module/MLLM-Efficiency/test_case/")
     parser.add_argument("--output_dir", type=str, default="")
     parser.add_argument("--image_path", type=str, default="")
-    parser.add_argument("--image_id", type=str, default="")
+    parser.add_argument("--image_id", type=str, default="1")
     # settings for model configuration
     
-    parser.add_argument('--pretrained', type=str, default="/share/home/mhma/models/llava-onevision-qwen2-7b-ov", help='Pretrained model path or identifier.')
+    parser.add_argument('--pretrained', type=str, default="/home/zxwang/huggingface/llava-onevision-qwen2-7b-ov", help='Pretrained model path or identifier.')
     parser.add_argument('--model_name', type=str, default="llava_qwen", help='Model name.')
     parser.add_argument("--use_fast_tokenizer", type=bool, default=True, help="")
     parser.add_argument("--output_attentions", type=bool, default=False, help="")
@@ -62,11 +62,17 @@ def parse_args():
                                                        'snapkv', 
                                                        'look-m', 
                                                        'vl-cache', 
-                                                       'adakv'], help='KV cache method to use.')
+                                                       'adakv'],default="vl-cache", help='KV cache method to use.')
     parser.add_argument("--merge", type=str, default=None, help="kv merge method(look-m)")
     parser.add_argument('--floor', type=float, default=0.2, help='hyper-parameter used in AdaKV')
     parser.add_argument("--recent_size", type=int, default=32, help="")
-    parser.add_argument("--pruning_ratio", type=float, default=0.4, help="pruning ratio of Key Cache")
+    parser.add_argument("--pruning_ratio", type=float, default=0.95, help="pruning ratio of Key Cache")
+
+    # vl-cache
+    parser.add_argument("--vlcache_head_adaptive", type=bool, default=True, help="When calculating token importance, is the importance of the token the same for each header within the layer. "
+                        "If the vlcache_head_adaptive is set to False, then set the token importance ranking of each head within the layer to be the same")
+    
+    parser.add_argument("--vlcache_different_window_per_layer", type=bool, default=False, help="Assign different window sizes to each layer")
     
     
     
@@ -83,11 +89,11 @@ def parse_args():
 def replace_layers(args):
     from kv_cache_compression.monkeypatch import replace_qwen,replace_mistral,replace_llama
     if "qwen" in args.model_name.lower():
-        replace_qwen(args.method.lower())
+        replace_qwen(args,args.method.lower())
     elif "mistral" in args.model_name.lower():
-        replace_mistral(args.method.lower())
+        replace_mistral(args,args.method.lower())
     elif "llama" in args.model_name.lower():
-        replace_llama(args.method.lower())
+        replace_llama(args,args.method.lower())
     else:
         raise ValueError(f"Model name {args.model_name} not supported")
 
@@ -147,6 +153,7 @@ def run_inference(model, tokenizer, image_processor,args):
 def main():
     args = parse_args()
     tokenizer, model, image_processor, max_length = load_model(args, args.pretrained, args.model_name)
+
     if args.method:
         replace_layers(args)
     run_inference(model, tokenizer, image_processor, args)
