@@ -11,6 +11,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import types
 import warnings
 from typing import (
     Any,
@@ -1016,3 +1017,18 @@ class Collator:
 
         if arr:
             yield arr
+
+
+def replace_qwen_on_multiple_devices(module,method):
+    from kv_cache_compression.qwen_model import qwen_attention_forward_streamingLLM
+    if method=='streamingllm':
+        eval_logger.info(f"using streamingllm")
+        module.forward = types.MethodType(qwen_attention_forward_streamingLLM, module)
+        
+        
+def replace_llama_on_multiple_devices(module,method):
+    pass
+
+
+def replace_mistral_on_multiple_devices(module,method):
+    pass

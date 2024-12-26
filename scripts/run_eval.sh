@@ -8,13 +8,13 @@ TASK=$1
 CKPT_PATH=$2
 # CONV_TEMPLATE=$3
 # MODEL_NAME=$4
-METHDO=$3
+METHOD=$3
 echo $TASK
 TASK_SUFFIX="${TASK//,/_}"
 echo $TASK_SUFFIX
 
 
-accelerate launch --num_processes 1 --main_process_port 23415 -m lmms_eval \
+accelerate launch --num_processes 4 --main_process_port 11247 -m lmms_eval \
     --model llava_onevision_with_kvcache \
     --model_args pretrained=$CKPT_PATH,method=$METHOD \
     --tasks $TASK \
@@ -22,5 +22,5 @@ accelerate launch --num_processes 1 --main_process_port 23415 -m lmms_eval \
     --log_samples \
     --log_samples_suffix $TASK_SUFFIX \
     --output_path /share/home/mhma/MLLM-Efficiency/logs/ \
-    --verbosity=DEBUG
+    # --verbosity=DEBUG
     # --device_map 'auto' \

@@ -20,6 +20,7 @@ from tqdm import tqdm
 from transformers import AutoConfig
 
 from lmms_eval import utils
+from lmms_eval.utils import replace_qwen_on_multiple_devices,replace_llama_on_multiple_devices,replace_mistral_on_multiple_devices
 from lmms_eval.api.instance import Instance
 from lmms_eval.api.model import lmms
 from lmms_eval.api.registry import register_model
@@ -164,6 +165,9 @@ class Llava_OneVision_with_kvcache(lmms):
         assert self.batch_size_per_gpu == 1, "Llava currently does not support batched generation. See https://github.com/haotian-liu/LLaVA/issues/754. HF Llava also has this issue."
 
         if accelerator.num_processes > 1:
+            
+            accelerator.wait_for_everyone()
+            
             assert accelerator.distributed_type in [DistributedType.FSDP, DistributedType.MULTI_GPU, DistributedType.DEEPSPEED], "Unsupported distributed type provided. Only DDP and FSDP are supported."
             # If you want to use DistributedType.DEEPSPEED, you have to run accelerate config before using the model
             # Also, you have to select zero stage 0 (equivalent to DDP) in order to make the prepare model works
@@ -177,16 +181,33 @@ class Llava_OneVision_with_kvcache(lmms):
                 eval_logger.info("Detected that you are using DistributedType.DEEPSPEED. Make sure you run `accelerate config` and set zero stage to 0")
 
             if accelerator.distributed_type == DistributedType.FSDP or accelerator.distributed_type == DistributedType.DEEPSPEED:
+                flag = 1
                 self._model = accelerator.prepare(self.model)
             else:
+                flag = 0
                 self._model = accelerator.prepare_model(self.model, evaluation_mode=True)
+                # self._model = self.model
             self.accelerator = accelerator
             if self.accelerator.is_local_main_process:
                 eval_logger.info(f"Using {accelerator.num_processes} devices with data parallelism")
             self._rank = self.accelerator.local_process_index
             self._world_size = self.accelerator.num_processes
 
-        elif accelerator.num_processes == 1 and device_map == "auto":
+            
+            accelerator.wait_for_everyone()
+                
+            from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention
+            from transformers.models.llama.modeling_llama import LlamaAttention
+            from transformers.models.mistral.modeling_mistral import MistralAttention
+            original_model = Accelerator.unwrap_model(self._model) if flag else self._model
+            for name, module in original_model.named_modules():
+                # print(type(module))
+                if isinstance(module, Qwen2Attention):
+                    replace_qwen_on_multiple_devices(module, self.method.lower())
+
+                    # print(f"Module: {module}, Forward Type: {type(module.forward)}")
+
+            accelerator.wait_for_everyone() 
             eval_logger.info(f"Using {accelerator.num_processes} devices with tensor parallelism")
             self._rank = 0
             self._world_size = 1
@@ -196,7 +217,7 @@ class Llava_OneVision_with_kvcache(lmms):
             self.model.to(self._device)
             self._rank = 0
             self._world_size = 1
-
+            
     @property
     def config(self):
         # return the associated transformers.AutoConfig for the given pretrained model.

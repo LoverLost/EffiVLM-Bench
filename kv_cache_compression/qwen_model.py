@@ -21,8 +21,7 @@ from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
 from .cache_utils import streamingLLMCache
 
 logger = logging.get_logger(__name__)
-
-
+from lmms_eval.utils import eval_logger
 
 QWEN2_INPUTS_DOCSTRING = r"""
     Args:
@@ -176,7 +175,7 @@ def qwen_attention_forward_streamingLLM(
     position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.45
     **kwargs,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-    
+    # eval_logger.info("Using StreamingLLM Attention")
     init_StreamingLLM(self)
     bsz, q_len, _ = hidden_states.size()
     

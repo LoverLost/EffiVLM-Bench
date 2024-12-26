@@ -189,7 +189,7 @@ class StreamingLLMKVCluster():
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups):
 
         bsz, num_heads, q_len, head_dim = query_states.shape
-        print(f"StreamingLLM max_capacity_prompt {self.max_capacity_prompt}")
+        # print(f"StreamingLLM max_capacity_prompt {self.max_capacity_prompt}")
 
         if q_len ==1: # [mhma-NOTE] i'm not sure this check can only passed by the case is 'decoding'.
             k_cur = key_states[:, :, -self.window_size:, :]
