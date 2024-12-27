@@ -175,10 +175,15 @@ def qwen_attention_forward_streamingLLM(
     position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.45
     **kwargs,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-    # eval_logger.info("Using StreamingLLM Attention")
-    init_StreamingLLM(self)
+
     bsz, q_len, _ = hidden_states.size()
     
+    if q_len > 1:
+        init_StreamingLLM(self, 
+                          q_len,
+                          budgets = self.budgets,
+                          )
+        self.kv_seq_len = 0
     
     input_shape = hidden_states.shape[:-1]
     hidden_shape = (*input_shape, -1, self.head_dim)
@@ -213,7 +218,7 @@ def qwen_attention_forward_streamingLLM(
         # sin and cos are specific to RoPE models; cache_position needed for the static cache
         cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
         if key_states.shape[-2] == kv_seq_len:
-            self.kv_seq_len = kv_seq_len
+            self.kv_seq_len = kv_seq_len       
             key_states_compress, value_states_compress = self.kv_cluster.update_kv(key_states, query_states, value_states, attention_mask, self.num_key_value_groups)
             past_key_value.update(key_states_compress, value_states_compress, self.layer_idx, cache_kwargs)
         else:

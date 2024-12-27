@@ -170,34 +170,27 @@ def merge_kv(key_states, value_states, indices, window_size, merge):
     return k_hh_recent, v_hh_recent
      
 class StreamingLLMKVCluster():
-    def __init__(self, window_size = 64, max_capacity_prompt = 256 + 64, kernel_size = 5, pooling = 'avgpool', merge = None):
-        self.window_size = window_size
-        self.max_capacity_prompt = max_capacity_prompt
-        assert self.max_capacity_prompt - self.window_size > 0
-        self.kernel_size = kernel_size
-        self.pooling = pooling
+    def __init__(self, query_len, budgets, window_size_budgets=0.1, merge=None):
+        self.query_len = query_len
+        self.budgets = budgets # 保留比
+        self.window_size_budgets = window_size_budgets # 窗口大小比
+        self.window_size = int(query_len * window_size_budgets)
+        self.max_capacity_prompt = int(query_len * budgets)
         self.merge = merge
 
-    def reset(self, window_size = 64, max_capacity_prompt = 256 + 64, kernel_size = 5, pooling = 'avgpool', merge = None):
-        self.window_size = window_size
-        self.max_capacity_prompt = max_capacity_prompt
-        assert self.max_capacity_prompt - self.window_size > 0
-        self.kernel_size = kernel_size
-        self.pooling = pooling
+    def reset(self, budgets, window_size_budgets=0.1, merge=None):
+        self.query_len = None
+        self.budgets = budgets # 保留比
+        self.window_size_budgets = window_size_budgets # 窗口大小比
+        self.window_size = None
+        self.max_capacity_prompt = None
         self.merge = merge
 
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups):
 
         bsz, num_heads, q_len, head_dim = query_states.shape
-        # print(f"StreamingLLM max_capacity_prompt {self.max_capacity_prompt}")
 
-        if q_len ==1: # [mhma-NOTE] i'm not sure this check can only passed by the case is 'decoding'.
-            k_cur = key_states[:, :, -self.window_size:, :]
-            v_cur = value_states[:, :, -self.window_size:, :]
-            key_states = torch.cat([key_states[:,:,:self.max_capacity_prompt - self.window_size,:], k_cur], dim = 2)
-            value_states = torch.cat([value_states[:,:,:self.max_capacity_prompt - self.window_size,:], v_cur], dim = 2)
-            return key_states, value_states
-        elif q_len < self.max_capacity_prompt:
+        if q_len < self.max_capacity_prompt:
             return key_states, value_states
         else:
             indices = torch.tensor(range(self.max_capacity_prompt - self.window_size), dtype=torch.int64).to(key_states.device)
@@ -215,26 +208,16 @@ class StreamingLLMKVCluster():
             value_states = torch.cat([v_past_compress, v_cur], dim = 2)
             return key_states, value_states
    
-       
-def init_StreamingLLM(self):
-    if not hasattr(self, "kv_cluster"):
-        if not hasattr(self.config, 'window_size'):
-            self.config.window_size = 32
-        if not hasattr(self.config, 'max_capacity_prompt'):
-            self.config.max_capacity_prompt = 2048
-        if not hasattr(self.config, 'kernel_size'):
-            self.config.kernel_size = 5
-        if not hasattr(self.config, 'pooling'):
-            self.config.pooling = 'avgpool'
-        if not hasattr(self.config, 'merge'):
-            self.config.merge = None
-        
-
+def init_StreamingLLM(self,
+                      query_len, 
+                      window_size_budgets = 0.1, 
+                      budgets = 0.3, 
+                      merge = None, 
+                      ):
 
     self.kv_cluster = StreamingLLMKVCluster(
-        window_size = self.config.window_size,
-        max_capacity_prompt = self.config.max_capacity_prompt,
-        kernel_size = self.config.kernel_size,
-        pooling = self.config.pooling,
-        merge = self.config.merge,
+        query_len=query_len,
+        budgets = budgets,
+        window_size_budgets = window_size_budgets,
+        merge = merge,
         )

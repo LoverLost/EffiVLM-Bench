@@ -8,6 +8,8 @@ dist
 # Log
 *.log
 *.log.*
+*.err
+*.out
 # *.json
 # *.jsonl
 

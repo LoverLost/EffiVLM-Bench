@@ -1,3 +1,4 @@
+import argparse
 import copy
 import json
 import logging
@@ -93,7 +94,18 @@ class Llava_OneVision_with_kvcache(lmms):
     ) -> None:
         super().__init__()
         # Do not use kwargs for now
-        assert kwargs == {}, f"Unexpected kwargs: {kwargs}"
+        if kwargs != {}:
+            defined_params = {
+            "pretrained", "truncation", "device", "batch_size", "model_name",
+            "attn_implementation", "device_map", "conv_template", "use_cache",
+            "truncate_context", "customized_config", "max_frames_num",
+            "mm_spatial_pool_stride", "mm_spatial_pool_mode", "token_strategy",
+            "video_decode_backend", "method"
+            }
+            
+            extra_kwargs = {k: v for k, v in kwargs.items() if k not in defined_params}
+
+            self.args = argparse.Namespace(**extra_kwargs)
 
         accelerator_kwargs = InitProcessGroupKwargs(timeout=timedelta(weeks=52))
         accelerator = Accelerator(kwargs_handlers=[accelerator_kwargs])
@@ -143,15 +155,15 @@ class Llava_OneVision_with_kvcache(lmms):
         
         self.method = method
         
+        # not change
         if self.method is not None:
             from kv_cache_compression.monkeypatch import replace_qwen,replace_mistral,replace_llama
             if "qwen" in model_name.lower():
-                replace_qwen(self.method.lower())
+                replace_qwen(self.args,self.method.lower())
             elif "mistral" in model_name.lower():
-                replace_mistral(self.method.lower())
+                replace_mistral(self.args,self.method.lower())
             elif "llama" in model_name.lower():
-                replace_llama(self.method.lower())
-
+                replace_llama(self.args,self.method.lower())
 
 
 
@@ -195,19 +207,23 @@ class Llava_OneVision_with_kvcache(lmms):
 
             
             accelerator.wait_for_everyone()
-                
-            from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention
-            from transformers.models.llama.modeling_llama import LlamaAttention
-            from transformers.models.mistral.modeling_mistral import MistralAttention
-            original_model = Accelerator.unwrap_model(self._model) if flag else self._model
-            for name, module in original_model.named_modules():
-                # print(type(module))
-                if isinstance(module, Qwen2Attention):
-                    replace_qwen_on_multiple_devices(module, self.method.lower())
-
-                    # print(f"Module: {module}, Forward Type: {type(module.forward)}")
-
-            accelerator.wait_for_everyone() 
+            
+            
+            
+            
+            # # Replace the attention module with the one that supports multiple devices    
+            # from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention
+            # from transformers.models.llama.modeling_llama import LlamaAttention
+            # from transformers.models.mistral.modeling_mistral import MistralAttention
+            # original_model = Accelerator.unwrap_model(self._model) if flag else self._model
+            # for name, module in original_model.named_modules():
+            #     # print(type(module))
+            #     if isinstance(module, Qwen2Attention):
+            #         replace_qwen_on_multiple_devices(module, self.method.lower())
+                    
+                    
+                    
+            # accelerator.wait_for_everyone() 
             eval_logger.info(f"Using {accelerator.num_processes} devices with tensor parallelism")
             self._rank = 0
             self._world_size = 1

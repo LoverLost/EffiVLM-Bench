@@ -4,6 +4,7 @@ doc_to_visual: !function utils.textvqa_doc_to_visual
 doc_to_text: !function utils.textvqa_doc_to_text
 doc_to_target: "answer"
 generation_kwargs:
+  max_new_tokens: 32
   until:
     - "ASSISTANT:"
 process_results: !function utils.textvqa_process_results

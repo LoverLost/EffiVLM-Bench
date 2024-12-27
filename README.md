@@ -83,7 +83,7 @@
 
 ### Use lmms-eval to eval on various of benchmarks.
 ```bash
-./scripts/run_eval.sh textvqa,docvqa /share/home/mhma/models/llava-onevision-qwen2-7b-ov streamingllm
+./scripts/run_eval.sh textvqa_val /share/home/mhma/models/llava-onevision-qwen2-7b-ov streamingllm 0.5
 ```
 1. hyperparams:
 model_args:pretrained,conv_template,model_name,method,...
