@@ -21,7 +21,7 @@ python3 -m accelerate.commands.launch \
     -m lmms_eval \
     --model llava_onevision_with_kvcache \
     --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=streamingllm,budgets=0.5 \
-    --tasks textvqa  \
+    --tasks textvqa_val  \
     --batch_size 1 \
     --log_samples \
     --log_samples_suffix textvqa_val \
