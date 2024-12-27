@@ -24,7 +24,7 @@ from llava.constants import DEFAULT_IMAGE_PATCH_TOKEN, DEFAULT_IM_START_TOKEN, D
 from llava.utils import rank0_print
 
 
-def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", torch_dtype="float16",attn_implementation="flash_attention_2", customized_config=None, overwrite_config=None, **kwargs):
+def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, load_4bit=False, device_map="auto", torch_dtype="float16",attn_implementation="eager", customized_config=None, overwrite_config=None, **kwargs):
     kwargs["device_map"] = device_map
 
     if load_8bit:
@@ -290,7 +290,7 @@ def load_pretrained_model(model_path, model_base, model_name, load_8bit=False, l
         if not vision_tower.is_loaded:
             vision_tower.load_model(device_map=device_map)
         if device_map != "auto":
-            vision_tower.to(device="cuda", dtype=torch.float16)
+            vision_tower.to(device="cuda", dtype=torch.bfloat16)
         image_processor = vision_tower.image_processor
 
     if hasattr(model.config, "max_sequence_length"):
