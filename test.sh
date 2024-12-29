@@ -20,9 +20,9 @@ python3 -m accelerate.commands.launch \
     --num_processes=4 \
     -m lmms_eval \
     --model llava_onevision_with_kvcache \
-    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=streamingllm,budgets=0.5 \
-    --tasks textvqa_val  \
+    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=streamingllm,budgets=0.2 \
+    --tasks chartqa  \
     --batch_size 1 \
     --log_samples \
-    --log_samples_suffix textvqa_val \
+    --log_samples_suffix chartqa \
     --output_path ./logs/

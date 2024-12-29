@@ -178,7 +178,7 @@ class Llava_OneVision_with_kvcache(lmms):
 
         if accelerator.num_processes > 1:
             
-            accelerator.wait_for_everyone()
+ 
             
             assert accelerator.distributed_type in [DistributedType.FSDP, DistributedType.MULTI_GPU, DistributedType.DEEPSPEED], "Unsupported distributed type provided. Only DDP and FSDP are supported."
             # If you want to use DistributedType.DEEPSPEED, you have to run accelerate config before using the model
@@ -193,10 +193,8 @@ class Llava_OneVision_with_kvcache(lmms):
                 eval_logger.info("Detected that you are using DistributedType.DEEPSPEED. Make sure you run `accelerate config` and set zero stage to 0")
 
             if accelerator.distributed_type == DistributedType.FSDP or accelerator.distributed_type == DistributedType.DEEPSPEED:
-                flag = 1
                 self._model = accelerator.prepare(self.model)
             else:
-                flag = 0
                 self._model = accelerator.prepare_model(self.model, evaluation_mode=True)
                 # self._model = self.model
             self.accelerator = accelerator
@@ -207,23 +205,7 @@ class Llava_OneVision_with_kvcache(lmms):
 
             
             accelerator.wait_for_everyone()
-            
-            
-            
-            
-            # # Replace the attention module with the one that supports multiple devices    
-            # from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention
-            # from transformers.models.llama.modeling_llama import LlamaAttention
-            # from transformers.models.mistral.modeling_mistral import MistralAttention
-            # original_model = Accelerator.unwrap_model(self._model) if flag else self._model
-            # for name, module in original_model.named_modules():
-            #     # print(type(module))
-            #     if isinstance(module, Qwen2Attention):
-            #         replace_qwen_on_multiple_devices(module, self.method.lower())
-                    
-                    
-                    
-            # accelerator.wait_for_everyone() 
+        elif accelerator.num_processes == 1 and device_map == "auto":
             eval_logger.info(f"Using {accelerator.num_processes} devices with tensor parallelism")
             self._rank = 0
             self._world_size = 1
