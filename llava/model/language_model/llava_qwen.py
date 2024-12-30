@@ -122,15 +122,26 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         modalities: Optional[List[str]] = ["image"],
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
+        # args = kwargs.pop("args", None)
+        # assert args is not None, "需要在调用LlavaQwenForCausalLM时传入args参数"
+        # method = getattr(args, "method", None) 
+        method = kwargs.pop("method", None)
+        assert method is not None, "需要在调用LlavaQwenForCausalLM时传入method参数"
         position_ids = kwargs.pop("position_ids", None)
         attention_mask = kwargs.pop("attention_mask", None)
         if "inputs_embeds" in kwargs:
             raise NotImplementedError("`inputs_embeds` is not supported")
 
         if images is not None:
-            (inputs, position_ids, attention_mask, _, inputs_embeds, _, kv_cache_mask) = self.prepare_inputs_labels_for_multimodal(inputs, position_ids, attention_mask, None, None, images, modalities, image_sizes=image_sizes)
-            # self.model.my_mask = my_mask 
-            transformers.models.qwen2.modeling_qwen2.Qwen2Attention.kv_cache_mask = kv_cache_mask  #  直接一步写到transformer库中，这样保证外部的代码和具体的transformer库完全解耦  
+            if method == "streamingllm":
+                (inputs, position_ids, attention_mask, _, inputs_embeds, _) = self.prepare_inputs_labels_for_multimodal(inputs, position_ids, attention_mask, None, None, images, modalities, image_sizes=image_sizes)
+
+            else:
+                (inputs, position_ids, attention_mask, _, inputs_embeds, _, text_image_mask) = self.prepare_inputs_labels_mask_for_multimodal(inputs, position_ids, attention_mask, None, None, images, modalities, image_sizes=image_sizes)
+                # self.model.my_mask = my_mask 
+                # transformers.models.qwen2.modeling_qwen2.Qwen2Attention.kv_cache_mask = kv_cache_mask  #  直接一步写到transformer库中，这样保证外部的代码和具体的transformer库完全解耦  
+                for layer in self.base_model.layers:
+                    layer.self_attn.text_image_mask = text_image_mask
         else:
             inputs_embeds = self.get_model().embed_tokens(inputs)
 

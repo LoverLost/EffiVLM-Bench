@@ -1019,16 +1019,33 @@ class Collator:
             yield arr
 
 
-def replace_qwen_on_multiple_devices(module,method):
-    from kv_cache_compression.qwen_model import qwen_attention_forward_streamingLLM
-    if method=='streamingllm':
-        eval_logger.info(f"using streamingllm")
-        module.forward = types.MethodType(qwen_attention_forward_streamingLLM, module)
+def replace_qwen_on_multiple_devices(module,method,args):
+    from kv_cache_compression.qwen_model import qwen_attention_forward_streamingLLM , qwen_attention_forward_vlcache , qwen_model_forward_vlcache
+    from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention,Qwen2Model
+    if isinstance(module,Qwen2Attention):
+        if method=='streamingllm':
+            eval_logger.info(f"using streamingllm")
+            module.forward = types.MethodType(qwen_attention_forward_streamingLLM, module)
+        if method=='look-m':
+            eval_logger.info(f"using look-m")
+            module.forward = types.MethodType(qwen_attention_forward_LOOK_M, module)
+            module.hh_ratio = args.hh_ratio
+            module.recent_ratio = args.recent_ratio
+        if method=='vl-cache':
+            eval_logger.info(f"using vl-cache")
+            module.forward = types.MethodType(qwen_attention_forward_vlcache, module)
+            module.vlcache_alpha_sparsity = 1 - args.pruning_ratio
+            module.vlcache_different_window_per_layer = args.vlcache_different_window_per_layer
+            module.vlcache_head_adaptive = args.vlcache_head_adaptive
+    if isinstance(module,Qwen2Model):
+        if method=='vl-cache':
+            eval_logger.info(f"using vl-cache")
+            module.forward = types.MethodType(qwen_model_forward_vlcache, module)
+
         
         
 def replace_llama_on_multiple_devices(module,method):
     pass
-
 
 def replace_mistral_on_multiple_devices(module,method):
     pass
