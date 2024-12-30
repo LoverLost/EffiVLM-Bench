@@ -1,0 +1,121 @@
+{
+  "results": {
+    "docvqa_test": {
+      "alias": "docvqa_test",
+      "anls,none": [],
+      "anls_stderr,none": [],
+      "submission,none": null,
+      "submission_stderr,none": "N/A"
+    }
+  },
+  "group_subtasks": {
+    "docvqa_test": []
+  },
+  "configs": {
+    "docvqa_test": {
+      "task": "docvqa_test",
+      "dataset_path": "lmms-lab/DocVQA",
+      "dataset_name": "DocVQA",
+      "dataset_kwargs": {
+        "token": true
+      },
+      "test_split": "test",
+      "full_docs": false,
+      "process_results_use_image": false,
+      "doc_to_visual": "<function docvqa_doc_to_visual at 0x7f7ca2411bd0>",
+      "doc_to_text": "<function docvqa_doc_to_text at 0x7f7ca2411ea0>",
+      "doc_to_target": "answers",
+      "process_results": "<function docvqa_test_process_results at 0x7f7ca2411870>",
+      "description": "",
+      "target_delimiter": " ",
+      "fewshot_delimiter": "\n\n",
+      "num_fewshot": 0,
+      "metric_list": [
+        {
+          "metric": "submission",
+          "aggregation": "<function docvqa_test_aggregate_results at 0x7f7ca2411b40>",
+          "higher_is_better": true
+        }
+      ],
+      "output_type": "generate_until",
+      "generation_kwargs": {
+        "max_new_tokens": 32,
+        "temperature": 0,
+        "do_sample": false,
+        "until": [
+          "\n\n"
+        ],
+        "top_k": 0,
+        "top_p": 0
+      },
+      "repeats": 1,
+      "should_decontaminate": false,
+      "lmms_eval_specific_kwargs": {
+        "default": {
+          "pre_prompt": "",
+          "post_prompt": "\nAnswer the question using a single word or phrase."
+        },
+        "qwen_vl": {
+          "pre_prompt": "",
+          "post_prompt": " Answer:"
+        },
+        "pre_prompt": "",
+        "post_prompt": "\nAnswer the question using a single word or phrase."
+      }
+    }
+  },
+  "versions": {
+    "docvqa_test": "Yaml"
+  },
+  "n-shot": {
+    "docvqa_test": 0
+  },
+  "higher_is_better": {
+    "docvqa_test": {
+      "submission": true
+    }
+  },
+  "n-samples": {
+    "docvqa_test": {
+      "original": 5188,
+      "effective": 5188
+    }
+  },
+  "config": {
+    "model": "llava_onevision_with_kvcache",
+    "model_args": "pretrained=/home/zxwang/huggingface/llava-onevision-qwen2-7b-ov,method=vl-cache,vlcache_head_adaptive=False,vlcache_different_window_per_layer=False,pruning_ratio=0.95",
+    "batch_size": "1",
+    "batch_sizes": [],
+    "device": null,
+    "use_cache": null,
+    "limit": null,
+    "bootstrap_iters": 100000,
+    "gen_kwargs": {
+      "temperature": 0,
+      "top_k": 0,
+      "top_p": 0,
+      "do_sample": false,
+      "max_new_tokens": 32
+    },
+    "random_seed": 0,
+    "numpy_seed": 1234,
+    "torch_seed": 1234,
+    "fewshot_seed": 1234
+  },
+  "git_hash": null,
+  "date": "20241229_225604",
+  "task_hashes": {
+    "docvqa_test": "1f28f2fd89c80c15df230844319e465e421ffb3873bebd701d54cde999c1b207"
+  },
+  "model_source": "llava_onevision_with_kvcache",
+  "model_name": "/home/zxwang/huggingface/llava-onevision-qwen2-7b-ov",
+  "model_name_sanitized": "huggingface__llava-onevision-qwen2-7b-ov",
+  "system_instruction": null,
+  "system_instruction_sha": null,
+  "fewshot_as_multiturn": false,
+  "chat_template": null,
+  "chat_template_sha": null,
+  "start_time": 19807505.89034896,
+  "end_time": 19824077.918453023,
+  "total_evaluation_time_seconds": "16572.028104063123"
+}

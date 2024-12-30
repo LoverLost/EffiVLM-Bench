@@ -21,7 +21,7 @@ from tqdm import tqdm
 from transformers import AutoConfig
 
 from lmms_eval import utils
-from lmms_eval.utils import replace_qwen_on_multiple_devices,replace_llama_on_multiple_devices,replace_mistral_on_multiple_devices
+from lmms_eval.utils import replace_llama_on_multiple_devices,replace_mistral_on_multiple_devices,replace_qwen_on_multiple_devices
 from lmms_eval.api.instance import Instance
 from lmms_eval.api.model import lmms
 from lmms_eval.api.registry import register_model
@@ -55,7 +55,7 @@ try:
     )
     from llava.model.builder import load_pretrained_model
 except ImportError as e:
-    eval_logger.debug(f"LLaVA is not installed. Please install LLaVA to use this model.\nError: {e}")
+    eval_logger.error(f"LLaVA is not installed. Please install LLaVA to use this model.\nError: {e}")
 
 
 # Determine best attention implementation
@@ -585,7 +585,11 @@ class Llava_OneVision_with_kvcache(lmms):
                 gen_kwargs.pop("image_aspect_ratio")
             try:
                 with torch.inference_mode():
-                    cont = self.model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
+                    if self.method == "look-m":
+                        with torch.autocast(device_type="cuda", dtype=torch.float32):
+                            cont = self.model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, method=self.method, **gen_kwargs)
+                    else:
+                        cont = self.model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache,method=self.method,**gen_kwargs)
                     # cont = self.model.generate(qwen_input_ids, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
 
                 text_outputs = self.tokenizer.batch_decode(cont, skip_special_tokens=True)

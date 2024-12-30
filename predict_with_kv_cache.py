@@ -144,6 +144,7 @@ def run_inference(model, tokenizer, image_processor,args):
         do_sample=False,
         temperature=0,
         max_new_tokens=4096,
+        args=args
     )
     output = tokenizer.batch_decode(cont, skip_special_tokens=True)
     print(output)
