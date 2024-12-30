@@ -1,4 +1,4 @@
-dataset_path: /share/home/mhma/.cache/huggingface/datasets/lmms-lab___chart_qa
+dataset_path: /share/home/mhma/MLLM-Efficiency/datasets/chartqa
 dataset_kwargs:
   token: False
   load_from_disk: True

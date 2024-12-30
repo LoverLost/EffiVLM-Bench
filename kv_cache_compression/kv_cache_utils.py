@@ -173,9 +173,9 @@ class StreamingLLMKVCluster():
     def __init__(self, query_len, budgets, window_size_budgets=0.1, merge=None):
         self.query_len = query_len
         self.budgets = budgets # 保留比
-        self.window_size_budgets = window_size_budgets # 窗口大小比
-        self.window_size = int(query_len * window_size_budgets)
         self.max_capacity_prompt = int(query_len * budgets)
+        self.window_size_budgets = window_size_budgets # 窗口大小比
+        self.window_size = int(self.max_capacity_prompt * window_size_budgets)
         self.merge = merge
 
     def reset(self, budgets, window_size_budgets=0.1, merge=None):
