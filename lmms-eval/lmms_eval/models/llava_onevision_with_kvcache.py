@@ -166,7 +166,6 @@ class Llava_OneVision_with_kvcache(lmms):
                 replace_llama(self.args,self.method.lower())
 
 
-
         self._config = self._model.config
         self.model.eval()
         self.truncation = truncation
