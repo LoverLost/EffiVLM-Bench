@@ -47,7 +47,6 @@ def docvqa_test_aggregate_results(results, args):
         file_name += f"_{budgets}"
     file_name += ".json"
 
-    # 5. 生成输出路径并写入结果
     path = generate_submission_file(file_name, args)
     with open(path, "w") as f:
         json.dump(results, f)
