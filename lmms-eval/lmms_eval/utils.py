@@ -1024,7 +1024,6 @@ def replace_qwen_on_multiple_devices(module,method):
     if method=='streamingllm':
         eval_logger.info(f"using streamingllm")
         module.forward = types.MethodType(qwen_attention_forward_streamingLLM, module)
-
         
         
 def replace_llama_on_multiple_devices(module,method):

@@ -21,7 +21,7 @@ from tqdm import tqdm
 from transformers import AutoConfig
 
 from lmms_eval import utils
-from lmms_eval.utils import replace_llama_on_multiple_devices,replace_mistral_on_multiple_devices,replace_qwen_on_multiple_devices
+from lmms_eval.utils import replace_qwen_on_multiple_devices,replace_llama_on_multiple_devices,replace_mistral_on_multiple_devices
 from lmms_eval.api.instance import Instance
 from lmms_eval.api.model import lmms
 from lmms_eval.api.registry import register_model
@@ -55,7 +55,7 @@ try:
     )
     from llava.model.builder import load_pretrained_model
 except ImportError as e:
-    eval_logger.error(f"LLaVA is not installed. Please install LLaVA to use this model.\nError: {e}")
+    eval_logger.debug(f"LLaVA is not installed. Please install LLaVA to use this model.\nError: {e}")
 
 
 # Determine best attention implementation
