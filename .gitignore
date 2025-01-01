@@ -57,3 +57,6 @@ playground/.nfs028b0000017bff2c00000012
 
 # demo/
 1.sh
+
+scripts/hf_download.sh
+scripts/zk_scripts
