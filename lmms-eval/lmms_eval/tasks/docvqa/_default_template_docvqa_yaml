@@ -1,4 +1,4 @@
-dataset_path: /home/zxwang/huggingface/lmms_eval/DocVQA
+dataset_path: /share/home/mhma/MLLM-Efficiency/datasets/DocVQA
 dataset_name: DocVQA
 dataset_kwargs:
   token: False

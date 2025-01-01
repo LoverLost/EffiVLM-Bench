@@ -18,8 +18,8 @@ from transformers.utils import (
 from .kv_cache_utils import init_StreamingLLM,init_H2O
 from .kv_cache_utils import init_StreamingLLM,init_Vlcache
 import math
-# from flash_attn import flash_attn_func, flash_attn_varlen_func
-# from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
+from flash_attn import flash_attn_func, flash_attn_varlen_func
+from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
 from .cache_utils import streamingLLMCache
 
 logger = logging.get_logger(__name__)
