@@ -62,3 +62,5 @@ scripts/hf_download.sh
 scripts/zk_scripts
 test_case/
 result/
+scripts/hf_download.sh
+scripts/zk_scripts
