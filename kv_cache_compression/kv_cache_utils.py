@@ -208,6 +208,176 @@ class StreamingLLMKVCluster():
             value_states = torch.cat([v_past_compress, v_cur], dim = 2)
             return key_states, value_states
    
+
+class VlCacheKVCluster():
+
+    def __init__(self,vlcache_alpha_sparsity,vlcache_different_window_per_layer,vlcache_head_adaptive):
+
+        self.vlcache_alpha_sparsity = vlcache_alpha_sparsity
+        self.vlcache_different_window_per_layer = vlcache_different_window_per_layer
+        self.vlcache_head_adaptive = vlcache_head_adaptive
+        self.sparsity_layer_tuple = ()
+        self.attn_weights_importance_tuple = ()
+        self.isprefill = True
+
+    def allocate_budget_and_update_kv(
+            self,
+            buget_layers:torch.Tensor,
+            sorted_attn_kv_indices:torch.Tensor,
+            layer_idx:int,
+            past_key_value:Cache
+    ):
+        """
+        Called in the forward function of Qwen2Attention, after the prefill phase ends,
+        Crop the kv cache based on the reallocated budget and token importance.
+        """
+        kv_cache_image_num = buget_layers[layer_idx] * past_key_value[layer_idx][0].shape[-2]
+        if self.vlcache_different_window_per_layer:
+            # different window size for each layer
+            kv_cache_window_num = buget_layers[layer_idx] * past_key_value[layer_idx][0].shape[-2] * 0.1
+        else:
+            # same window size for each layer , 10% budget for each layer
+            kv_cache_window_num =  past_key_value[layer_idx][0].shape[-2] * self.vlcache_alpha_sparsity * 0.1
+        kv_cache_image_num_int = int(torch.ceil(kv_cache_image_num).item())
+        kv_cache_window_num_int = math.ceil(kv_cache_window_num)
+        # choose window
+        sorted_attn_kv_select_window = torch.arange(
+            past_key_value[layer_idx][0].shape[-2] - kv_cache_window_num_int, 
+            past_key_value[layer_idx][0].shape[-2],
+            device = sorted_attn_kv_indices.device
+        )
+
+        # choose other tokens
+        if self.vlcache_head_adaptive:
+            assert len(sorted_attn_kv_indices.shape) == 4
+            # [layer, batch_size, head_num , kv_len]
+            sorted_attn_kv_indices_layer = sorted_attn_kv_indices[layer_idx,0,:,:]
+            sorted_attn_kv_select_window = sorted_attn_kv_select_window.repeat(sorted_attn_kv_indices.shape[2], 1) 
+            mask = ~ torch.isin(sorted_attn_kv_indices_layer,sorted_attn_kv_select_window)
+            sorted_attn_kv_select_image = torch.stack([
+                    row[m] for row, m in zip(sorted_attn_kv_indices_layer, mask)
+                ])
+            sorted_attn_kv_select_image = sorted_attn_kv_select_image[:,:kv_cache_image_num_int]
+        else:
+            assert len(sorted_attn_kv_indices.shape) == 2
+            # [layer,kv_len]
+            sorted_attn_kv_indices_layer = sorted_attn_kv_indices[layer_idx]
+            mask = ~ torch.isin(sorted_attn_kv_indices_layer,sorted_attn_kv_select_window)
+            sorted_attn_kv_select_image = sorted_attn_kv_indices_layer[mask]
+            sorted_attn_kv_select_image = sorted_attn_kv_select_image[:kv_cache_image_num_int]
+
+        sorted_attn_kv_select = torch.cat([sorted_attn_kv_select_image, sorted_attn_kv_select_window], dim=-1)
+        sorted_attn_kv_select = torch.sort(sorted_attn_kv_select, dim=-1)[0]
+
+        if self.vlcache_head_adaptive:
+            self.prefill_update_head(past_key_value, layer_idx, sorted_attn_kv_select)
+        else:
+            past_key_value.key_cache[layer_idx] = past_key_value.key_cache[layer_idx][:, :, sorted_attn_kv_select,:]
+            past_key_value.value_cache[layer_idx] = past_key_value.value_cache[layer_idx][:, :, sorted_attn_kv_select,:]
+
+
+    def get_sparsity_layer(
+        self,
+        attn_weights_postvison:torch.Tensor, 
+        q_len:int,
+        post_vision_size:int,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        '''
+        Called in the forward function of Qwen2Attention, Calculate the sparsity of this layer based on attn_weights_postvision
+        '''
+        # get max scores from one row
+        max_scores,_ = torch.max(attn_weights_postvison, axis=-1, keepdims=True)
+        # filter the attn_weights_postvison
+        filtered_attn_weights = (attn_weights_postvison >= 0.01 * max_scores).int()
+        # get nonzero entries
+        nonzero_entries = (filtered_attn_weights > 0).sum(dim=(-2, -1)).to(torch.float32)
+        matrix_tril = torch.tril(torch.ones((q_len, q_len), device=attn_weights_postvison.device))[-post_vision_size:, :]
+        num_elements_denominator = matrix_tril.count_nonzero().to(torch.float32)
+        # get sparsity of each layer
+        sparsity = (num_elements_denominator - nonzero_entries) / num_elements_denominator
+        sparsity_layer = sparsity.mean()
+        sparsity_layer_tuple = (sparsity_layer,)
+        return sparsity_layer_tuple
+    
+    def get_budget_layer_and_sorted_attn_kv_indices(
+        self,
+        vlcache_sparsity_layer_tuple:Tuple[torch.Tensor],
+        vlcache_attn_weights_importance_tuple:Tuple[torch.Tensor],
+        layers:int,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        '''
+        Called in the forward function of Qwen2Model, after the prefill phase ends, the sparsity of each layer is aggregated 
+        to reallocate according to the budget, and the token importance is calculated
+        '''
+        sparsity_tensor = torch.stack([layer_sparsity[0] for layer_sparsity in vlcache_sparsity_layer_tuple])
+        non_sparsity_sum = (1 - sparsity_tensor).sum()
+        buget_layers = torch.zeros(layers)
+        # Support different window sizes for each layer
+        for l in range(layers):
+            if self.vlcache_different_window_per_layer:
+                # different window size for each layer
+                buget_layers[l] = torch.clamp((1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * layers, min=0.01, max=1.0)
+            else:
+                # same window size for each layer , 10% budget for each layer
+                buget_layers[l] = torch.clamp((1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * 0.9 * layers, min=0.01, max=1.0)
+        
+        # [ layers , batch_size , head_num , all_kv_len]
+        stacked_attn_weights_importance = torch.stack([attn_weights_importance[0] for attn_weights_importance in vlcache_attn_weights_importance_tuple])
+        
+        if not self.vlcache_head_adaptive:
+            # if not head adaptive , sum over head and batch. 
+            attn_weights_importance_sum_layer = stacked_attn_weights_importance.sum(dim=[1, 2])
+            sorted_attn_kv, sorted_indices = torch.sort(attn_weights_importance_sum_layer, dim=-1, descending=True)
+        else:
+            sorted_attn_kv, sorted_indices = torch.sort(stacked_attn_weights_importance, dim=-1, descending=True)
+        return buget_layers, sorted_indices
+    
+    def get_token_importance(
+        self,
+        attn_weights_postvison:torch.Tensor, 
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        '''
+        Called in the forward function of Qwen2Attention , Calculate the token importance based on the attn_weights_postvisa of the current header
+        '''
+        attn_weights_importance = attn_weights_postvison.sum(dim=-2)
+        attn_weights_importance_tuple = (attn_weights_importance,)
+
+        return attn_weights_importance_tuple
+    
+    def prefill_update_head(
+        self,
+        past_key_value:Cache, 
+        layer_idx: int,
+        sorted_attn_kv_indices: torch.Tensor,
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        
+        # Create new tensors to store the reordered states
+        past_key_states = past_key_value.key_cache[layer_idx]
+        past_value_states = past_key_value.value_cache[layer_idx]
+        batch_size = past_key_states.shape[0]
+        num_heads = past_key_states.shape[1] 
+        head_dim = past_key_states.shape[-1]
+        seq_len = sorted_attn_kv_indices.shape[-1]
+        
+        # Initialize new tensors with the right shape
+        new_key_states = torch.zeros((batch_size, num_heads, seq_len, head_dim), 
+                                dtype=past_key_states.dtype,
+                                device=past_key_states.device)
+        new_value_states = torch.zeros((batch_size, num_heads, seq_len, head_dim),
+                                    dtype=past_value_states.dtype,
+                                    device=past_value_states.device)
+        
+        # Reorder each head separately
+        for head_idx in range(num_heads):
+            new_key_states[:, head_idx] = past_key_states[:, head_idx, sorted_attn_kv_indices[head_idx]]
+            new_value_states[:, head_idx] = past_value_states[:, head_idx, sorted_attn_kv_indices[head_idx]]
+        
+        # Update the cache
+        past_key_value.key_cache[layer_idx] = new_key_states
+        past_key_value.value_cache[layer_idx] = new_value_states
+
+
+
 def init_StreamingLLM(self,
                       query_len, 
                       window_size_budgets = 0.1, 
@@ -220,4 +390,12 @@ def init_StreamingLLM(self,
         budgets = budgets,
         window_size_budgets = window_size_budgets,
         merge = merge,
+        )
+
+def init_Vlcache(self):
+
+    self.kv_cluster = VlCacheKVCluster(
+        vlcache_alpha_sparsity = self.vlcache_alpha_sparsity,
+        vlcache_different_window_per_layer = self.vlcache_different_window_per_layer,
+        vlcache_head_adaptive = self.vlcache_head_adaptive,
         )
