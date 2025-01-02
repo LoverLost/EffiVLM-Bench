@@ -1,5 +1,5 @@
 import transformers
-from .qwen_model import qwen_attention_forward_streamingLLM, qwen_decode_forward
+from .qwen_model import qwen_attention_forward_streamingLLM, qwen_attention_forward_H2O, qwen_decode_forward
 
 
 def replace_qwen(args, method):
@@ -8,7 +8,10 @@ def replace_qwen(args, method):
         print('using streamingllm')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_streamingLLM
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = args.budgets
-        # transformers.models.qwen2.modeling_qwen2.Qwen2Model.forward = qwen_decode_forward
+    elif method == "h2o":
+        print('using h2o')
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_H2O
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = args.budgets
 def replace_mistral(method):
     pass
 
