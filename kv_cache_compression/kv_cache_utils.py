@@ -334,7 +334,7 @@ class VlCacheKVCluster():
             past_key_value.value_cache[layer_idx] = past_key_value.value_cache[layer_idx][:, :, sorted_attn_kv_select,:]
 
 
-    def get_budget_layer(
+    def get_sparsity_layer(
         self,
         attn_weights_postvison:torch.Tensor, 
         q_len:int,
@@ -379,7 +379,7 @@ class VlCacheKVCluster():
                 # same window size for each layer , 10% budget for each layer
                 buget_layers[l] = torch.clamp((1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * 0.9 * layers, min=0.01, max=1.0)
         
-        # [ layers , batch_size , head_num , question_len]
+        # [ layers , batch_size , head_num , all_kv_len]
         stacked_attn_weights_importance = torch.stack([attn_weights_importance[0] for attn_weights_importance in vlcache_attn_weights_importance_tuple])
         
         if not self.vlcache_head_adaptive:

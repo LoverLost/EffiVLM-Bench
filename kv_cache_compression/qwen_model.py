@@ -444,7 +444,7 @@ def qwen_attention_forward_vlcache(
     # get sparsity_layer and attn_weights_importance form attn_weights
     if q_len > 1 :
         attn_weights_postvison = attn_weights[:, :, -self.kv_cluster.vlcache_post_vision_size:, :]
-        sparsity_layer_tuple = self.kv_cluster.get_budget_layer(attn_weights_postvison, q_len, self.kv_cluster.vlcache_post_vision_size)
+        sparsity_layer_tuple = self.kv_cluster.get_sparsity_layer(attn_weights_postvison, q_len, self.kv_cluster.vlcache_post_vision_size)
         attn_weights_importance_tuple = self.kv_cluster.get_token_importance(attn_weights_postvison)
         self.kv_cluster.sparsity_layer_tuple += (sparsity_layer_tuple,)
         self.kv_cluster.attn_weights_importance_tuple += (attn_weights_importance_tuple,)
