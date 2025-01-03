@@ -246,7 +246,6 @@ class H2OKVCluster():
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
         if self.head_adaptive:
             attn_weights_sum = attn_weights[:, :, :, :-self.window_size].sum(dim=-2)
-            print(1111)
         else:
 
             attn_weights_sum = attn_weights[:, :, :, :-self.window_size].sum(dim=[1, 2]).unsqueeze(1).expand(-1, num_heads, -1)
