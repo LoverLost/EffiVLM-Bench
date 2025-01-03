@@ -10,6 +10,7 @@ datasets/*
 *.log.*
 *.err
 *.out
+logs/
 # *.json
 # *.jsonl
 
@@ -55,6 +56,7 @@ HIP
 playground/.nfs028b0000017bff2c00000012
 
 # demo/
+1.sh
 test_case/
 result/
 scripts/hf_download.sh

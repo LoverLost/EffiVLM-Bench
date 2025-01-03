@@ -207,6 +207,62 @@ class StreamingLLMKVCluster():
             key_states = torch.cat([k_past_compress, k_cur], dim = 2)
             value_states = torch.cat([v_past_compress, v_cur], dim = 2)
             return key_states, value_states
+ 
+ 
+ 
+class H2OKVCluster():
+    def __init__(self, query_len, budgets, window_size_budgets=0.1, head_adaptive=True, merge=None):
+        self.query_len = query_len
+        self.budgets = budgets # 保留比
+        self.max_capacity_prompt = int(query_len * budgets)
+        self.window_size_budgets = window_size_budgets # 窗口大小比
+        self.window_size = int(self.max_capacity_prompt * window_size_budgets)
+        self.head_adaptive = head_adaptive
+        self.merge = merge
+
+    def reset(self, budgets, window_size_budgets=0.1, head_adaptive=True, merge=None):
+        self.query_len = None
+        self.budgets = budgets # 保留比
+        self.window_size_budgets = window_size_budgets # 窗口大小比
+        self.window_size = None
+        self.max_capacity_prompt = None
+        self.merge = merge
+        self.head_adaptive = head_adaptive
+        
+    def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups):
+
+        bsz, num_heads, q_len, head_dim = query_states.shape
+        if q_len < self.max_capacity_prompt:
+            return key_states, value_states
+
+        attn_weights = torch.matmul(query_states, key_states.transpose(-2, -1)) / math.sqrt(head_dim)
+        dtype_min = torch.finfo(attn_weights.dtype).min
+        mask = torch.triu(
+            torch.full((self.window_size, self.window_size), dtype_min, device=attn_weights.device),
+            diagonal=1,
+        )
+        attn_weights[:, :, -self.window_size:, -self.window_size:] += mask
+
+        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        if self.head_adaptive:
+            attn_weights_sum = attn_weights[:, :, :, :-self.window_size].sum(dim=-2)
+        else:
+
+            attn_weights_sum = attn_weights[:, :, :, :-self.window_size].sum(dim=[1, 2]).unsqueeze(1).expand(-1, num_heads, -1)
+
+        indices = attn_weights_sum.topk(self.max_capacity_prompt - self.window_size, dim=-1).indices
+        indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
+
+        k_past_compress = key_states[:, :, :-self.window_size, :].gather(dim=2, index=indices)
+        v_past_compress = value_states[:, :, :-self.window_size, :].gather(dim=2, index=indices)
+
+        k_cur = key_states[:, :, -self.window_size:, :]
+        v_cur = value_states[:, :, -self.window_size:, :]
+        key_states = torch.cat([k_past_compress, k_cur], dim=2)
+        value_states = torch.cat([v_past_compress, v_cur], dim=2)
+
+        return key_states, value_states
+    
    
 
 class VlCacheKVCluster():
@@ -376,31 +432,7 @@ class VlCacheKVCluster():
         past_key_value.key_cache[layer_idx] = new_key_states
         past_key_value.value_cache[layer_idx] = new_value_states
 
-
-
-def init_StreamingLLM(self,
-                      query_len, 
-                      window_size_budgets = 0.1, 
-                      budgets = 0.3, 
-                      merge = None, 
-                      ):
-
-    self.kv_cluster = StreamingLLMKVCluster(
-        query_len=query_len,
-        budgets = budgets,
-        window_size_budgets = window_size_budgets,
-        merge = merge,
-        )
-
-def init_Vlcache(self):
-
-    self.kv_cluster = VlCacheKVCluster(
-        vlcache_alpha_sparsity = self.vlcache_alpha_sparsity,
-        vlcache_different_window_per_layer = self.vlcache_different_window_per_layer,
-        vlcache_head_adaptive = self.vlcache_head_adaptive,
-        )
-    
-
+     
 class LOOK_MCluster():
     def __init__(self,hh_size=4,recent_size=512,k_seq_dim=2,v_seq_dim=2,hh_ratio=None,recent_ratio=None, layer_idx=None, budget=None):
         self.hh_size = hh_size
@@ -534,6 +566,45 @@ class LOOK_MCluster():
             print('*'*30)
 
         return k_hh_recent, v_hh_recent, max_indices, similarity    # 最后多加了两个参数，为了分析用
+        
+
+def init_StreamingLLM(self,
+                      query_len, 
+                      window_size_budgets = 0.1, 
+                      budgets = 0.3, 
+                      merge = None, 
+                      ):
+
+    self.kv_cluster = StreamingLLMKVCluster(
+        query_len=query_len,
+        budgets = budgets,
+        window_size_budgets = window_size_budgets,
+        merge = merge,
+        )
+
+def init_H2O(self,
+            query_len, 
+            head_adaptive,
+            window_size_budgets = 0.1, 
+            budgets = 0.3, 
+            merge = None, 
+            ):
+
+    self.kv_cluster = H2OKVCluster(
+        query_len=query_len,
+        budgets = budgets,
+        window_size_budgets = window_size_budgets,
+        head_adaptive=head_adaptive,
+        merge = merge,
+        )   
+    
+def init_Vlcache(self):
+
+    self.kv_cluster = VlCacheKVCluster(
+        vlcache_alpha_sparsity = self.vlcache_alpha_sparsity,
+        vlcache_different_window_per_layer = self.vlcache_different_window_per_layer,
+        vlcache_head_adaptive = self.vlcache_head_adaptive,
+        )
 
 def init_LOOK_M(self):
     self.kv_cache = LOOK_MCluster(
@@ -544,3 +615,4 @@ def init_LOOK_M(self):
             layer_idx = self.layer_idx,
             budget = self.budget
         )
+
