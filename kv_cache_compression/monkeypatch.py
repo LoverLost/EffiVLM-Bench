@@ -1,5 +1,5 @@
 import transformers
-from .qwen_model import qwen_attention_forward_streamingLLM, qwen_model_forward_vlcache,qwen_attention_forward_vlcache
+from .qwen_model import qwen_attention_forward_streamingLLM, qwen_model_forward_vlcache,qwen_attention_forward_vlcache,qwen_attention_forward_LOOK_M
 from .kv_cache_utils import VlCacheKVCluster
 
 
@@ -30,6 +30,14 @@ def replace_qwen(args, method):
         # TODO: 需要添加一个变量来记录当前的 question_id
         # 清空 vlcache_attn_weights_importance_tuple vlcache_sparsity_layer_tuple vlcache_first_after_prefill
         # 读入 
+
+    if method =='look-m':
+        print('using look-m')
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.hh_ratio = getattr(args, 'hh_ratio', None)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.recent_ratio = getattr(args, 'recent_ratio', None)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budget = getattr(args, 'budget', None)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_LOOK_M
+    
 
 
 def replace_mistral(method):

@@ -399,3 +399,147 @@ def init_Vlcache(self):
         vlcache_different_window_per_layer = self.vlcache_different_window_per_layer,
         vlcache_head_adaptive = self.vlcache_head_adaptive,
         )
+    
+
+class LOOK_MCluster():
+    def __init__(self,hh_size=4,recent_size=512,k_seq_dim=2,v_seq_dim=2,hh_ratio=None,recent_ratio=None, layer_idx=None, budget=None):
+        self.hh_size = hh_size
+        self.recent_size = recent_size
+        # self.cache_size = hh_size + recent_size
+        self.k_seq_dim = k_seq_dim
+        self.v_seq_dim = v_seq_dim
+        self.importance = None
+        self.hh_ratio = hh_ratio
+        self.recent_ratio = recent_ratio
+        # self.image_save_ratio = None
+        self.budget = budget
+        self.layer_idx = layer_idx
+        if self.budget is not None and self.hh_ratio is not None and self.recent_ratio is not None:
+            raise ValueError('budget, hh_ratio, recent_ratio 不能同时设置。要么只设置budget,要么设置hh_ratio和recent_ratio')
+
+    def reset(self):
+        self.importance = None
+        self.seq_len = None
+
+
+    def get_importance(self, attn_score_cache, total_heads=28, kv_heads=4):   # FIXME 这里由于qwen2采用的是分组注意力机制，所以这里目前采用的方法就是取平均
+        
+        num_new_tokens = attn_score_cache.shape[2]
+
+        if self.importance is None:
+            origin = attn_score_cache.sum(0).sum(1)   # [28, 7587]
+            self.importance = origin.view(kv_heads, total_heads // kv_heads, -1).mean(dim=1)   # 改了一下分组注意力求的方式
+        else:
+            # breakpoint() # check here 
+            raise NotImplementedError('LOOK-M方法不会进入这个分支，检查外部代码是否出现了问题')
+            # one_to_seven_score = attn_score_cache.sum(0).sum(1)   
+            # aaa = one_to_seven_score.view(4, 7, -1).mean(dim=1)
+            # aaa[..., :-num_new_tokens] = aaa[..., :-num_new_tokens] + self.hh_score
+            # self.hh_score = aaa
+    
+    def update(self, attn_score_cache):   # 这里的attension score cache就是attension weights   
+        if self.hh_ratio is not None and self.recent_ratio is not None and attn_score_cache.shape[-2]>1:  # 判断new_seq_len是否大于1，即是否是prefill阶段
+            self.hh_size = int(attn_score_cache.shape[-1] * self.hh_ratio)  # 309  列这个的目的就是个例子，为了和下面的代码注释对应，能知道每个数的根源是什么
+            self.recent_size = int(attn_score_cache.shape[-1] * self.recent_ratio)  # 309
+            self.budget = self.hh_size + self.recent_size
+            # self.image_save_ratio = self.hh_ratio
+        elif self.budget is not None:
+            self.hh_size = int(attn_score_cache.shape[-1] * self.budget * 0.9)
+            self.recent_size = int(attn_score_cache.shape[-1] * self.budget * 0.1)
+            self.budget = self.hh_size + self.recent_size
+        self.get_importance(attn_score_cache)
+
+    def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups, text_mask, head_dim, dropout, training, origin_key_states, origin_value_states):  # attn_score_cache是[bsz, num_heads, new_seq_len, total_seq_len]
+        assert len(text_mask) == 1, '当前只能处理一个batch'
+
+        attn_score_cache = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(head_dim)
+        if attention_mask is not None:  # no matter the length, we just slice it
+            causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+            attn_score_cache = attn_score_cache + causal_mask
+        attn_score_cache = nn.functional.softmax(attn_score_cache, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        attn_score_cache = nn.functional.dropout(attn_score_cache, p=dropout, training=training)
+
+        # if self.hh_ratio is not None and attn_score_cache.shape[-2]>1:  # 判断new_seq_len是否大于1，即是否是prefill阶段
+        #     self.hh_size = int(attn_score_cache.shape[-1] * self.hh_ratio)  # 309  列这个的目的就是个例子，为了和下面的代码注释对应，能知道每个数的根源是什么
+        #     self.recent_size = int(attn_score_cache.shape[-1] * self.recent_ratio)  # 309
+        #     self.cache_size = self.hh_size + self.recent_size
+        #     self.image_save_ratio = self.hh_ratio
+
+        # self.get_importance(attn_score_cache)
+
+        if self.layer_idx == 0:
+            device_id = torch.cuda.current_device()
+            print('*'*30)
+            print(f'正在处理kv cache, 设备id为: {device_id}')
+            print('原始长度为： ', end='')
+            print(attn_score_cache.shape[-1])
+            # print('*'*30)
+
+        self.update(attn_score_cache)
+        seq_len = origin_key_states.size(self.k_seq_dim)  # [bsz, num_kv_heads, seq_len, kv_head_dim]
+
+        if seq_len <= self.budget:   # 直接返回
+            return origin_key_states, origin_value_states, None, None
+
+        # hh-selection
+        bsz, num_heads, _, head_dim = origin_key_states.shape # [1, 32, seq_len, 128]
+        #################################only-image######################################
+        # image_position = self.image_position.clone()  # list [ 1, 99, 23423, 34235435]
+        # for i in range(self.image_position.shape[0]):   # FIXME 算图片偏移
+        #     image_position[i] = image_position[i] + 575 * i
+        # anti_image_mask = torch.full((self.hh_score.shape[0], self.hh_score.shape[1]), 0)
+        # for i in range(self.image_position.shape[0]):
+        #     anti_image_mask[:, image_position[i]:image_position[i]+576] = -65516
+        make_image_less_important = torch.full((self.importance.shape[0], self.importance.shape[1]), 0)  #  FIXME 换成了我的写法
+        # anti_image_mask = [[0 if item is True else -65536 for item in my_mask[0]]]
+        image_mask = [False if item is True else True for item in text_mask[0]]  # True表示这个位置需要被“去掉”
+        make_image_less_important[:, image_mask] = -10000
+        make_image_less_important = make_image_less_important.to(device=self.importance.device, dtype=self.importance.dtype)
+        make_image_less_important[:, -self.recent_size:] = -10000
+        self.importance = self.importance + make_image_less_important  # 其实根本不是按论文中说的那么做的。没有取最大
+        _, keep_topk = torch.topk(self.importance[:, :-self.recent_size], self.hh_size, dim=-1)  # keep_topk是[4, 758]
+        keep_topk = keep_topk.sort().values
+        # mask those keeping tok
+        self.importance.scatter_(1, keep_topk, 0)  #沿着第1维，把所有留下的token置为0
+        self.importance[:, -self.recent_size:] = 0  # recent 一定会被留下
+        mask = self.importance >= 0  # 是个bool矩阵，true就表示留下来
+        expanded_mask = mask.unsqueeze(0).unsqueeze(-1).expand_as(origin_key_states)    # 【1， 4， 7587， 128】
+        k_hh_recent = torch.masked_select(origin_key_states, expanded_mask).view(bsz, num_heads, -1, head_dim)  
+        v_hh_recent = torch.masked_select(origin_value_states, expanded_mask).view(bsz, num_heads, -1, head_dim)  
+        ##################only-image#################################
+        ###############################only-image-merge###################################
+        # applying merge here
+        k_hh_pruned = torch.masked_select(origin_key_states, ~expanded_mask).view(bsz, num_heads, -1, head_dim)  # [1, 32, 3098 - 309 * 2, 128]
+        with torch.autocast(device_type="cuda", dtype=torch.float32):
+            similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
+            max_values, max_indices = similarity.max(dim=-1)  # max_indices是[1, 4, 6071]
+        
+        # pivot merge
+        # similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
+        # max_values, max_indices = similarity.max(dim=-1)  # max_indices是[1, 4, 6071]
+       
+        merged_indices = max_indices.unsqueeze(-1).repeat(1, 1, 1, 128)  # [1, 4, 6071, 128]。
+        k_hh_selected = torch.gather(input=k_hh_recent, dim=2, index=merged_indices)
+        k_hh_merged = (k_hh_pruned + k_hh_selected)/2
+        k_hh_recent = torch.scatter_reduce(input=k_hh_recent, dim=2, index=merged_indices, src=k_hh_merged, reduce='mean', include_self=True) # include_self=True seems decrease the performance
+        v_hh_pruned = origin_value_states.squeeze()[~mask].view(bsz, num_heads, -1, head_dim)
+        v_hh_selected = torch.gather(input=v_hh_recent, dim=2, index=merged_indices)
+        v_hh_merged = (v_hh_pruned + v_hh_selected)/2
+        v_hh_recent = torch.scatter_reduce(input=v_hh_recent, dim=2, index=merged_indices, src=v_hh_merged, reduce='mean', include_self=True)
+        ####################################only-image-merge#############################
+        if self.layer_idx == 0:
+            print('压缩后的长度为： ', end='')
+            print(k_hh_recent.shape[-2])
+            print('*'*30)
+
+        return k_hh_recent, v_hh_recent, max_indices, similarity    # 最后多加了两个参数，为了分析用
+
+def init_LOOK_M(self):
+    self.kv_cache = LOOK_MCluster(
+            k_seq_dim=2,
+            v_seq_dim=2,
+            hh_ratio=self.hh_ratio,
+            recent_ratio=self.recent_ratio,
+            layer_idx = self.layer_idx,
+            budget = self.budget
+        )
