@@ -1,4 +1,6 @@
 import transformers
+from .qwen_model import qwen_attention_forward_streamingLLM, qwen_model_forward_vlcache, qwen_attention_forward_vlcache
+from .kv_cache_utils import VlCacheKVCluster
 from .qwen_model import qwen_attention_forward_streamingLLM, qwen_attention_forward_H2O, qwen_decode_forward
 
 
@@ -8,6 +10,16 @@ def replace_qwen(args, method):
         print('using streamingllm')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_streamingLLM
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = args.budgets
+        # transformers.models.qwen2.modeling_qwen2.Qwen2Model.forward = qwen_decode_forward
+
+    elif method == "vl-cache":
+        print('using vlcache')
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_vlcache
+        transformers.models.qwen2.modeling_qwen2.Qwen2Model.forward = qwen_model_forward_vlcache
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_alpha_sparsity = args.budgets
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_different_window_per_layer = args.vlcache_different_window_per_layer
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_head_adaptive = args.vlcache_head_adaptive
+
     elif method == "h2o":
         print('using h2o')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_H2O
