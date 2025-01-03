@@ -681,9 +681,6 @@ def qwen_attention_forward_LOOK_M(
         init_LOOK_M(self)
         if hasattr(self, "kv_seq_len"):
             self.kv_seq_len = 0    # q_len > 1 证明到了下一个sample阶段，kv_seq_len在第一个sample的时候会被初始化，从第二个开始只需要置空即可
-    if q_len == 1:
-        aaaaa = 1
-    
     
     input_shape = hidden_states.shape[:-1]
     hidden_shape = (*input_shape, -1, self.head_dim)

@@ -517,7 +517,8 @@ class LOOK_MCluster():
         # pivot merge
         # similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
         # max_values, max_indices = similarity.max(dim=-1)  # max_indices是[1, 4, 6071]
-       
+        if self.layer_idx == 0:
+            print('共有{}个token和小于3的（sink）相似度最高'.format(str((max_indices[0][0] < 3).sum() + (max_indices[0][1] < 3).sum() + (max_indices[0][2] < 3).sum() + (max_indices[0][3] < 3).sum())))
         merged_indices = max_indices.unsqueeze(-1).repeat(1, 1, 1, 128)  # [1, 4, 6071, 128]。
         k_hh_selected = torch.gather(input=k_hh_recent, dim=2, index=merged_indices)
         k_hh_merged = (k_hh_pruned + k_hh_selected)/2
