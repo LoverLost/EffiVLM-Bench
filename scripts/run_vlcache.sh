@@ -65,7 +65,6 @@ for i in "${!pruning_ratio_list[@]}"; do
     --output_path $ROOT_DIR/logs_onevision_vlcache_${task}_${LOG_SUFFIX_NAME} \
     --model llava_onevision_with_kvcache \
     --model_args "pretrained=/home/zxwang/huggingface/llava-onevision-qwen2-7b-ov,method=vl-cache,vlcache_head_adaptive=False,vlcache_different_window_per_layer=False,pruning_ratio=${PRUNING_RATIO}" \
-    --gen_kwargs "temperature=0,top_k=0,top_p=0,do_sample=False,max_new_tokens=32" \
     --tasks $task
     date
 done

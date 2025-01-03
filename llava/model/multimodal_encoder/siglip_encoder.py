@@ -3,6 +3,7 @@
 """
 
 from typing import Optional, Tuple, Union, Dict
+import numpy as np
 from dataclasses import dataclass
 from functools import partial, reduce
 from PIL import Image
@@ -49,7 +50,18 @@ class SigLipImageProcessor:
             images = [images]
         else:
             # to adapt video data
-            images = [to_numpy_array(image) for image in images]
+            processed_images = []
+            for image in images:
+                if isinstance(image, Image.Image):
+                    if image.mode != "RGB":
+                        image = image.convert("RGB")
+                    image_array = np.array(image)
+                    processed_images.append(image_array)
+                else:
+                    processed_images.append(to_numpy_array(image))
+
+            # images = [to_numpy_array(image) for image in images]
+            images = processed_images
             assert isinstance(images, list)
 
         transforms = [
