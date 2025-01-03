@@ -12,6 +12,7 @@ def replace_qwen(args, method):
         print('using h2o')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_H2O
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = args.budgets
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.h2o_head_adaptive = args.h2o_head_adaptive
 def replace_mistral(method):
     pass
 

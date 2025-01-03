@@ -211,21 +211,24 @@ class StreamingLLMKVCluster():
  
  
 class H2OKVCluster():
-    def __init__(self, query_len, budgets, window_size_budgets=0.1, merge=None):
+    def __init__(self, query_len, budgets, window_size_budgets=0.1, head_adaptive=True, merge=None):
         self.query_len = query_len
         self.budgets = budgets # 保留比
         self.max_capacity_prompt = int(query_len * budgets)
         self.window_size_budgets = window_size_budgets # 窗口大小比
         self.window_size = int(self.max_capacity_prompt * window_size_budgets)
+        self.head_adaptive = head_adaptive
         self.merge = merge
 
-    def reset(self, budgets, window_size_budgets=0.1, merge=None):
+    def reset(self, budgets, window_size_budgets=0.1, head_adaptive=True, merge=None):
         self.query_len = None
         self.budgets = budgets # 保留比
         self.window_size_budgets = window_size_budgets # 窗口大小比
         self.window_size = None
         self.max_capacity_prompt = None
         self.merge = merge
+        self.head_adaptive = head_adaptive
+        
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups):
 
         bsz, num_heads, q_len, head_dim = query_states.shape
@@ -241,7 +244,12 @@ class H2OKVCluster():
         attn_weights[:, :, -self.window_size:, -self.window_size:] += mask
 
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-        attn_weights_sum = attn_weights[:, :, :, :-self.window_size].sum(dim=-2)
+        if self.head_adaptive:
+            attn_weights_sum = attn_weights[:, :, :, :-self.window_size].sum(dim=-2)
+            print(1111)
+        else:
+
+            attn_weights_sum = attn_weights[:, :, :, :-self.window_size].sum(dim=[1, 2]).unsqueeze(1).expand(-1, num_heads, -1)
 
         indices = attn_weights_sum.topk(self.max_capacity_prompt - self.window_size, dim=-1).indices
         indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
@@ -273,6 +281,7 @@ def init_StreamingLLM(self,
 
 def init_H2O(self,
             query_len, 
+            head_adaptive,
             window_size_budgets = 0.1, 
             budgets = 0.3, 
             merge = None, 
@@ -282,5 +291,6 @@ def init_H2O(self,
         query_len=query_len,
         budgets = budgets,
         window_size_budgets = window_size_budgets,
+        head_adaptive=head_adaptive,
         merge = merge,
         )   

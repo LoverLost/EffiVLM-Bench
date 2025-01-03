@@ -275,6 +275,7 @@ def qwen_attention_forward_H2O(
         init_H2O(self, 
                 q_len,
                 budgets = self.budgets,
+                head_adaptive = self.h2o_head_adaptive,
                 )
         self.kv_seq_len = 0
     
