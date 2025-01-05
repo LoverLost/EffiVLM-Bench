@@ -36,6 +36,7 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.hh_ratio = getattr(args, 'hh_ratio', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.recent_ratio = getattr(args, 'recent_ratio', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budget = getattr(args, 'budgets', None)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.merge = getattr(args, 'merge', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_LOOK_M
     
 

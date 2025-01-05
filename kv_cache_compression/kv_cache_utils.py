@@ -434,7 +434,7 @@ class VlCacheKVCluster():
 
      
 class LOOK_MCluster():
-    def __init__(self,hh_size=4,recent_size=512,k_seq_dim=2,v_seq_dim=2,hh_ratio=None,recent_ratio=None, layer_idx=None, budget=None):
+    def __init__(self,hh_size=4,recent_size=512,k_seq_dim=2,v_seq_dim=2,hh_ratio=None,recent_ratio=None, layer_idx=None, budget=None, merge=True):
         self.hh_size = hh_size
         self.recent_size = recent_size
         # self.cache_size = hh_size + recent_size
@@ -448,6 +448,7 @@ class LOOK_MCluster():
         self.layer_idx = layer_idx
         if self.budget is not None and self.hh_ratio is not None and self.recent_ratio is not None:
             raise ValueError('budget, hh_ratio, recent_ratio 不能同时设置。要么只设置budget,要么设置hh_ratio和recent_ratio')
+        self.merge = merge
 
     def reset(self):
         self.importance = None
@@ -481,7 +482,7 @@ class LOOK_MCluster():
             self.budget = self.hh_size + self.recent_size
         self.get_importance(attn_score_cache)
 
-    def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups, text_mask, head_dim, dropout, training, origin_key_states, origin_value_states):  # attn_score_cache是[bsz, num_heads, new_seq_len, total_seq_len]
+    def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups, text_mask, head_dim, dropout, training, origin_key_states, origin_value_states, merge=True):  # attn_score_cache是[bsz, num_heads, new_seq_len, total_seq_len]
         assert len(text_mask) == 1, '当前只能处理一个batch'
 
         attn_score_cache = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(head_dim)
@@ -501,10 +502,10 @@ class LOOK_MCluster():
 
         if self.layer_idx == 0:
             device_id = torch.cuda.current_device()
-            print('*'*30)
-            print(f'正在处理kv cache, 设备id为: {device_id}')
-            print('原始长度为： ', end='')
-            print(attn_score_cache.shape[-1])
+            # print('*'*30)
+            # print(f'正在处理kv cache, 设备id为: {device_id}')
+            # print('原始长度为： ', end='')
+            # print(attn_score_cache.shape[-1])
             # print('*'*30)
 
         self.update(attn_score_cache)
@@ -541,31 +542,32 @@ class LOOK_MCluster():
         ##################only-image#################################
         ###############################only-image-merge###################################
         # applying merge here
-        k_hh_pruned = torch.masked_select(origin_key_states, ~expanded_mask).view(bsz, num_heads, -1, head_dim)  # [1, 32, 3098 - 309 * 2, 128]
-        with torch.autocast(device_type="cuda", dtype=torch.float32):
-            similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
-            max_values, max_indices = similarity.max(dim=-1)  # max_indices是[1, 4, 6071]
-        
-        # pivot merge
-        # similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
-        # max_values, max_indices = similarity.max(dim=-1)  # max_indices是[1, 4, 6071]
-        if self.layer_idx == 0:
-            print('共有{}个token和小于3的（sink）相似度最高'.format(str((max_indices[0][0] < 3).sum() + (max_indices[0][1] < 3).sum() + (max_indices[0][2] < 3).sum() + (max_indices[0][3] < 3).sum())))
-        merged_indices = max_indices.unsqueeze(-1).repeat(1, 1, 1, 128)  # [1, 4, 6071, 128]。
-        k_hh_selected = torch.gather(input=k_hh_recent, dim=2, index=merged_indices)
-        k_hh_merged = (k_hh_pruned + k_hh_selected)/2
-        k_hh_recent = torch.scatter_reduce(input=k_hh_recent, dim=2, index=merged_indices, src=k_hh_merged, reduce='mean', include_self=True) # include_self=True seems decrease the performance
-        v_hh_pruned = origin_value_states.squeeze()[~mask].view(bsz, num_heads, -1, head_dim)
-        v_hh_selected = torch.gather(input=v_hh_recent, dim=2, index=merged_indices)
-        v_hh_merged = (v_hh_pruned + v_hh_selected)/2
-        v_hh_recent = torch.scatter_reduce(input=v_hh_recent, dim=2, index=merged_indices, src=v_hh_merged, reduce='mean', include_self=True)
+        if self.merge:
+            k_hh_pruned = torch.masked_select(origin_key_states, ~expanded_mask).view(bsz, num_heads, -1, head_dim)  # [1, 32, 3098 - 309 * 2, 128]
+            with torch.autocast(device_type="cuda", dtype=torch.float32):
+                similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
+                max_values, max_indices = similarity.max(dim=-1)  # max_indices是[1, 4, 6071]
+            
+            # pivot merge
+            # similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
+            # max_values, max_indices = similarity.max(dim=-1)  # max_indices是[1, 4, 6071]
+            # if self.layer_idx == 0:
+            #     print('共有{}个token和小于3的（sink）相似度最高'.format(str((max_indices[0][0] < 3).sum() + (max_indices[0][1] < 3).sum() + (max_indices[0][2] < 3).sum() + (max_indices[0][3] < 3).sum())))
+            merged_indices = max_indices.unsqueeze(-1).repeat(1, 1, 1, 128)  # [1, 4, 6071, 128]。
+            k_hh_selected = torch.gather(input=k_hh_recent, dim=2, index=merged_indices)
+            k_hh_merged = (k_hh_pruned + k_hh_selected)/2
+            k_hh_recent = torch.scatter_reduce(input=k_hh_recent, dim=2, index=merged_indices, src=k_hh_merged, reduce='mean', include_self=True) # include_self=True seems decrease the performance
+            v_hh_pruned = origin_value_states.squeeze()[~mask].view(bsz, num_heads, -1, head_dim)
+            v_hh_selected = torch.gather(input=v_hh_recent, dim=2, index=merged_indices)
+            v_hh_merged = (v_hh_pruned + v_hh_selected)/2
+            v_hh_recent = torch.scatter_reduce(input=v_hh_recent, dim=2, index=merged_indices, src=v_hh_merged, reduce='mean', include_self=True)
         ####################################only-image-merge#############################
-        if self.layer_idx == 0:
-            print('压缩后的长度为： ', end='')
-            print(k_hh_recent.shape[-2])
-            print('*'*30)
+        # if self.layer_idx == 0:
+        #     print('压缩后的长度为： ', end='')
+        #     print(k_hh_recent.shape[-2])
+        #     print('*'*30)
 
-        return k_hh_recent, v_hh_recent, max_indices, similarity    # 最后多加了两个参数，为了分析用
+        return k_hh_recent, v_hh_recent, None, None    # 最后多加了两个参数，为了分析用
         
 
 def init_StreamingLLM(self,
@@ -613,6 +615,7 @@ def init_LOOK_M(self):
             hh_ratio=self.hh_ratio,
             recent_ratio=self.recent_ratio,
             layer_idx = self.layer_idx,
-            budget = self.budget
+            budget = self.budget,
+            merge = self.merge
         )
 
