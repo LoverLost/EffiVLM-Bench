@@ -10,6 +10,7 @@ from typing import List
 from typing import List, Optional, Tuple
 from transformers.cache_utils import Cache
 
+
 def key_pruner_query_driven(kv_states, q_states, recent_size=128, ratio=0.3):
     _, _, seqlen, head_dim = kv_states.shape
     k = int(head_dim * ratio)
@@ -23,13 +24,15 @@ def key_pruner_query_driven(kv_states, q_states, recent_size=128, ratio=0.3):
     mask = mask.scatter_(-1, keep_idx, 1)
     mask_k = mask.unsqueeze(2).expand(-1, -1, seqlen - recent_size, -1)
 
-    return kv_states[:, :, :seqlen - recent_size, :][~mask_k].reshape(1,-1,seqlen - recent_size,head_dim-k), kv_states[:, :, seqlen - recent_size:, :], ~mask
+    return kv_states[:, :, :seqlen - recent_size, :][~mask_k].reshape(1, -1, seqlen - recent_size, head_dim-k), kv_states[:, :, seqlen - recent_size:, :], ~mask
+
 
 class DynamicCacheSplitHeadFlatten(Cache):
     '''
     adapt from https://github.com/FFY0/AdaKV.
     '''
-    def __init__(self) ->None:
+
+    def __init__(self) -> None:
         # Token wise List[]  Head wise KV List[torch.Tensor]
         super().__init__()
         self.key_cache: List[torch.Tensor] = []
@@ -41,13 +44,14 @@ class DynamicCacheSplitHeadFlatten(Cache):
 
     def __iter__(self):
         for layer_idx in range(len(self)):
-            yield (tuple(self.key_cache[layer_idx]),tuple(self.value_cache[layer_idx]))
+            yield (tuple(self.key_cache[layer_idx]), tuple(self.value_cache[layer_idx]))
 
-    def __getitem__(self, layer_idx: int) -> Tuple[Tuple[torch.Tensor],Tuple[torch.Tensor]]:
+    def __getitem__(self, layer_idx: int) -> Tuple[Tuple[torch.Tensor], Tuple[torch.Tensor]]:
         if layer_idx < len(self):
-            return (tuple(self.key_cache[layer_idx]),tuple(self.value_cache[layer_idx]))
+            return (tuple(self.key_cache[layer_idx]), tuple(self.value_cache[layer_idx]))
         else:
-            raise KeyError(f"Cache only has {len(self)} layers, attempted to access layer with index {layer_idx}")
+            raise KeyError(
+                f"Cache only has {len(self)} layers, attempted to access layer with index {layer_idx}")
 
     def update(self, key_states, value_states, layer_idx, cache_kwargs=None):
         if len(self.key_cache) <= layer_idx:
@@ -63,14 +67,15 @@ class DynamicCacheSplitHeadFlatten(Cache):
             import nvtx
             copy_old_rng = nvtx.start_range("copy old")
             from tiny_api_cuda import update_flatten_view
-            new_key_cache = update_flatten_view(self.key_cache[layer_idx].view(-1,dim), key_states.view(-1, dim), head_lens, cu_klen)
-            new_value_cache = update_flatten_view(self.value_cache[layer_idx].view(-1,dim), value_states.view(-1, dim), head_lens, cu_klen)
+            new_key_cache = update_flatten_view(
+                self.key_cache[layer_idx].view(-1, dim), key_states.view(-1, dim), head_lens, cu_klen)
+            new_value_cache = update_flatten_view(
+                self.value_cache[layer_idx].view(-1, dim), value_states.view(-1, dim), head_lens, cu_klen)
 
             nvtx.end_range(copy_old_rng)
 
             self.key_cache[layer_idx] = new_key_cache
             self.value_cache[layer_idx] = new_value_cache
-
 
         return self.key_cache[layer_idx], self.value_cache[layer_idx]
 
@@ -88,7 +93,8 @@ class DynamicCacheSplitHeadFlatten(Cache):
         """Converts the `DynamicCache` instance into the its equivalent in the legacy cache format."""
         legacy_cache = ()
         for layer_idx in range(len(self)):
-            legacy_cache += ((self.key_cache[layer_idx], self.value_cache[layer_idx]),)
+            legacy_cache += ((self.key_cache[layer_idx],
+                             self.value_cache[layer_idx]),)
         return legacy_cache
 
     @classmethod
@@ -105,6 +111,8 @@ class DynamicCacheSplitHeadFlatten(Cache):
 # this version will not update in inference mode
 
 # Copied from transformers.models.llama.modeling_llama.repeat_kv
+
+
 def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     """
     This is the equivalent of torch.repeat_interleave(x, dim=1, repeats=n_rep). The hidden states go from (batch,
@@ -113,8 +121,10 @@ def repeat_kv(hidden_states: torch.Tensor, n_rep: int) -> torch.Tensor:
     batch, num_key_value_heads, slen, head_dim = hidden_states.shape
     if n_rep == 1:
         return hidden_states
-    hidden_states = hidden_states[:, :, None, :, :].expand(batch, num_key_value_heads, n_rep, slen, head_dim)
+    hidden_states = hidden_states[:, :, None, :, :].expand(
+        batch, num_key_value_heads, n_rep, slen, head_dim)
     return hidden_states.reshape(batch, num_key_value_heads * n_rep, slen, head_dim)
+
 
 def merge_kv(key_states, value_states, indices, window_size, merge):
     # merge methods in LOOK-M
@@ -122,18 +132,27 @@ def merge_kv(key_states, value_states, indices, window_size, merge):
     bsz, num_heads, k_len, head_dim = key_states.shape
 
     # kv-selected
-    selected_keys = key_states.gather(dim=2, index=indices)  # [bsz, num_heads, topk_len, head_dim]
-    selected_values = value_states.gather(dim=2, index=indices)  # [bsz, num_heads, topk_len, head_dim]
+    # [bsz, num_heads, topk_len, head_dim]
+    selected_keys = key_states.gather(dim=2, index=indices)
+    # [bsz, num_heads, topk_len, head_dim]
+    selected_values = value_states.gather(dim=2, index=indices)
 
     # kv-drop
-    all_indices = torch.arange(k_len, device=key_states.device).unsqueeze(0).unsqueeze(0).expand(bsz, num_heads, k_len)
-    all_indices_flattened = all_indices.flatten()  # [bsz * num_heads * (k_len-window_size)]
-    selected_indices_flattened = indices.flatten()  # [bsz * num_heads * topk_len]
+    all_indices = torch.arange(k_len, device=key_states.device).unsqueeze(
+        0).unsqueeze(0).expand(bsz, num_heads, k_len)
+    # [bsz * num_heads * (k_len-window_size)]
+    all_indices_flattened = all_indices.flatten()
+    # [bsz * num_heads * topk_len]
+    selected_indices_flattened = indices.flatten()
     is_selected = torch.isin(all_indices_flattened, selected_indices_flattened)
     drop_indices_flattened = all_indices_flattened[~is_selected]
-    drop_len = drop_indices_flattened.shape[0] // (all_indices.shape[0] * all_indices.shape[1])
-    drop_indices = drop_indices_flattened.reshape(all_indices.shape[0], all_indices.shape[1], drop_len) # [bsz * num_heads * (k_len-window_size-topk_len)]
-    drop_indices = drop_indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)  # [bsz, num_heads, (k_len-window_size-topk_len), head_dim]
+    drop_len = drop_indices_flattened.shape[0] // (
+        all_indices.shape[0] * all_indices.shape[1])
+    # [bsz * num_heads * (k_len-window_size-topk_len)]
+    drop_indices = drop_indices_flattened.reshape(
+        all_indices.shape[0], all_indices.shape[1], drop_len)
+    # [bsz, num_heads, (k_len-window_size-topk_len), head_dim]
+    drop_indices = drop_indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
     drop_keys = key_states.gather(dim=2, index=drop_indices)
     drop_values = value_states.gather(dim=2, index=drop_indices)
 
@@ -142,24 +161,34 @@ def merge_kv(key_states, value_states, indices, window_size, merge):
 
     ##### apply merge #####
     # prepare for merge
-    k_hh_pruned = drop_keys  # [bsz, num_heads, k_len-topk_len-window_size, head_dim]
-    k_hh_recent = torch.cat([recent_keys, selected_keys], dim=2)  # [bsz, num_heads, topk_len+window_size, head_dim]
-    v_hh_pruned = drop_values  # [bsz, num_heads, k_len-topk_len-window_size, head_dim]
-    v_hh_recent = torch.cat([selected_values, value_states[:, :, -window_size:, :]], dim=2)  # [bsz, num_heads, topk_len+window_size, head_dim]
+    # [bsz, num_heads, k_len-topk_len-window_size, head_dim]
+    k_hh_pruned = drop_keys
+    # [bsz, num_heads, topk_len+window_size, head_dim]
+    k_hh_recent = torch.cat([recent_keys, selected_keys], dim=2)
+    # [bsz, num_heads, k_len-topk_len-window_size, head_dim]
+    v_hh_pruned = drop_values
+    # [bsz, num_heads, topk_len+window_size, head_dim]
+    v_hh_recent = torch.cat(
+        [selected_values, value_states[:, :, -window_size:, :]], dim=2)
     # similarity matrix
-    similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) # cosin
+    similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ (
+        (k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2))  # cosin
     max_values, max_indices = similarity.max(dim=-1)
 
     # pivot merge
-    if merge=="pivot":
+    if merge == "pivot":
         print("Pivot merge")
         merged_indices = max_indices.unsqueeze(-1).repeat(1, 1, 1, 128)
-        k_hh_selected = torch.gather(input=k_hh_recent, dim=2, index=merged_indices)
+        k_hh_selected = torch.gather(
+            input=k_hh_recent, dim=2, index=merged_indices)
         k_hh_merged = (k_hh_pruned + k_hh_selected)/2
-        k_hh_recent = torch.scatter_reduce(input=k_hh_recent, dim=2, index=merged_indices, src=k_hh_merged, reduce='mean', include_self=True) # include_self=True seems decrease the performance
-        v_hh_selected = torch.gather(input=v_hh_recent, dim=2, index=merged_indices)
+        k_hh_recent = torch.scatter_reduce(input=k_hh_recent, dim=2, index=merged_indices, src=k_hh_merged,
+                                           reduce='mean', include_self=True)  # include_self=True seems decrease the performance
+        v_hh_selected = torch.gather(
+            input=v_hh_recent, dim=2, index=merged_indices)
         v_hh_merged = (v_hh_pruned + v_hh_selected)/2
-        v_hh_recent = torch.scatter_reduce(input=v_hh_recent, dim=2, index=merged_indices, src=v_hh_merged, reduce='mean', include_self=True)
+        v_hh_recent = torch.scatter_reduce(
+            input=v_hh_recent, dim=2, index=merged_indices, src=v_hh_merged, reduce='mean', include_self=True)
     else:
         raise ValueError('Merge method not supported')
 
@@ -168,20 +197,21 @@ def merge_kv(key_states, value_states, indices, window_size, merge):
     # weight merge
 
     return k_hh_recent, v_hh_recent
-     
+
+
 class StreamingLLMKVCluster():
     def __init__(self, query_len, budgets, window_size_budgets=0.1, merge=None):
         self.query_len = query_len
-        self.budgets = budgets # 保留比
+        self.budgets = budgets  # 保留比
         self.max_capacity_prompt = int(query_len * budgets)
-        self.window_size_budgets = window_size_budgets # 窗口大小比
+        self.window_size_budgets = window_size_budgets  # 窗口大小比
         self.window_size = int(self.max_capacity_prompt * window_size_budgets)
         self.merge = merge
 
     def reset(self, budgets, window_size_budgets=0.1, merge=None):
         self.query_len = None
-        self.budgets = budgets # 保留比
-        self.window_size_budgets = window_size_budgets # 窗口大小比
+        self.budgets = budgets  # 保留比
+        self.window_size_budgets = window_size_budgets  # 窗口大小比
         self.window_size = None
         self.max_capacity_prompt = None
         self.merge = merge
@@ -193,42 +223,46 @@ class StreamingLLMKVCluster():
         if q_len < self.max_capacity_prompt:
             return key_states, value_states
         else:
-            indices = torch.tensor(range(self.max_capacity_prompt - self.window_size), dtype=torch.int64).to(key_states.device)
-            indices = indices.unsqueeze(0).unsqueeze(0).unsqueeze(-1).repeat(bsz, num_heads, 1, head_dim)
+            indices = torch.tensor(range(
+                self.max_capacity_prompt - self.window_size), dtype=torch.int64).to(key_states.device)
+            indices = indices.unsqueeze(0).unsqueeze(
+                0).unsqueeze(-1).repeat(bsz, num_heads, 1, head_dim)
 
             if self.merge is not None:
-                key_states, value_states = merge_kv(key_states, value_states, indices, self.window_size, self.merge)
+                key_states, value_states = merge_kv(
+                    key_states, value_states, indices, self.window_size, self.merge)
                 return key_states, value_states
 
-            k_past_compress = key_states[:, :, :-self.window_size, :].gather(dim = 2, index = indices)
-            v_past_compress = value_states[:, :, :-self.window_size, :].gather(dim = 2, index = indices)
+            k_past_compress = key_states[:, :, :-
+                                         self.window_size, :].gather(dim=2, index=indices)
+            v_past_compress = value_states[:, :, :-
+                                           self.window_size, :].gather(dim=2, index=indices)
             k_cur = key_states[:, :, -self.window_size:, :]
             v_cur = value_states[:, :, -self.window_size:, :]
-            key_states = torch.cat([k_past_compress, k_cur], dim = 2)
-            value_states = torch.cat([v_past_compress, v_cur], dim = 2)
+            key_states = torch.cat([k_past_compress, k_cur], dim=2)
+            value_states = torch.cat([v_past_compress, v_cur], dim=2)
             return key_states, value_states
- 
- 
- 
+
+
 class H2OKVCluster():
     def __init__(self, query_len, budgets, window_size_budgets=0.1, head_adaptive=True, merge=None):
         self.query_len = query_len
-        self.budgets = budgets # 保留比
+        self.budgets = budgets  # 保留比
         self.max_capacity_prompt = int(query_len * budgets)
-        self.window_size_budgets = window_size_budgets # 窗口大小比
+        self.window_size_budgets = window_size_budgets  # 窗口大小比
         self.window_size = int(self.max_capacity_prompt * window_size_budgets)
         self.head_adaptive = head_adaptive
         self.merge = merge
 
     def reset(self, budgets, window_size_budgets=0.1, head_adaptive=True, merge=None):
         self.query_len = None
-        self.budgets = budgets # 保留比
-        self.window_size_budgets = window_size_budgets # 窗口大小比
+        self.budgets = budgets  # 保留比
+        self.window_size_budgets = window_size_budgets  # 窗口大小比
         self.window_size = None
         self.max_capacity_prompt = None
         self.merge = merge
         self.head_adaptive = head_adaptive
-        
+
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups):
 
         bsz, num_heads, q_len, head_dim = query_states.shape
@@ -236,8 +270,9 @@ class H2OKVCluster():
         if q_len < self.max_capacity_prompt:
             return key_states, value_states
         key_states_repeat = repeat_kv(key_states, num_key_value_groups)
-        attn_weights = torch.matmul(query_states, key_states_repeat.transpose(-2, -1)) / math.sqrt(head_dim)
-        
+        attn_weights = torch.matmul(
+            query_states, key_states_repeat.transpose(-2, -1)) / math.sqrt(head_dim)
+
         # implementation of kv-factory
         # dtype_min = torch.finfo(attn_weights.dtype).min
         # mask = torch.triu(
@@ -245,21 +280,28 @@ class H2OKVCluster():
         #     diagonal=1,
         # )
         # attn_weights[:, :, -self.window_size:, -self.window_size:] += mask
-        
-        attn_weights += attention_mask
-        attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-        attn_weights = attn_weights.view(bsz, num_heads // num_key_value_groups, num_key_value_groups, q_len, -1)
-        
-        if self.head_adaptive:
-            attn_weights_sum = attn_weights[:, :, :, :, :-self.window_size].sum(dim=[-3,-2])
-        else:
-            attn_weights_sum = attn_weights[:, :, :, :, :-self.window_size].sum(dim=[1,2,3]).unsqueeze(1).expand(-1, num_heads // num_key_value_groups, -1)
 
-        indices = attn_weights_sum.topk(self.max_capacity_prompt - self.window_size, dim=-1).indices
+        attn_weights += attention_mask
+        attn_weights = nn.functional.softmax(
+            attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        attn_weights = attn_weights.view(
+            bsz, num_heads // num_key_value_groups, num_key_value_groups, q_len, -1)
+
+        if self.head_adaptive:
+            attn_weights_sum = attn_weights[:, :, :,
+                                            :, :-self.window_size].sum(dim=[-3, -2])
+        else:
+            attn_weights_sum = attn_weights[:, :, :, :, :-self.window_size].sum(
+                dim=[1, 2, 3]).unsqueeze(1).expand(-1, num_heads // num_key_value_groups, -1)
+
+        indices = attn_weights_sum.topk(
+            self.max_capacity_prompt - self.window_size, dim=-1).indices
         indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
 
-        k_past_compress = key_states[:, :, :-self.window_size, :].gather(dim=2, index=indices)
-        v_past_compress = value_states[:, :, :-self.window_size, :].gather(dim=2, index=indices)
+        k_past_compress = key_states[:, :, :-
+                                     self.window_size, :].gather(dim=2, index=indices)
+        v_past_compress = value_states[:, :, :-
+                                       self.window_size, :].gather(dim=2, index=indices)
 
         k_cur = key_states[:, :, -self.window_size:, :]
         v_cur = value_states[:, :, -self.window_size:, :]
@@ -267,12 +309,11 @@ class H2OKVCluster():
         value_states = torch.cat([v_past_compress, v_cur], dim=2)
 
         return key_states, value_states
-    
-   
+
 
 class VlCacheKVCluster():
 
-    def __init__(self,vlcache_alpha_sparsity,vlcache_different_window_per_layer,vlcache_head_adaptive):
+    def __init__(self, vlcache_alpha_sparsity, vlcache_different_window_per_layer, vlcache_head_adaptive):
 
         self.vlcache_alpha_sparsity = vlcache_alpha_sparsity
         self.vlcache_different_window_per_layer = vlcache_different_window_per_layer
@@ -283,119 +324,141 @@ class VlCacheKVCluster():
 
     def allocate_budget_and_update_kv(
             self,
-            buget_layers:torch.Tensor,
-            sorted_attn_kv_indices:torch.Tensor,
-            layer_idx:int,
-            past_key_value:Cache
+            buget_layers: torch.Tensor,
+            sorted_attn_kv_indices: torch.Tensor,
+            layer_idx: int,
+            past_key_value: Cache
     ):
         """
         Called in the forward function of Qwen2Attention, after the prefill phase ends,
         Crop the kv cache based on the reallocated budget and token importance.
         """
-        kv_cache_image_num = buget_layers[layer_idx] * past_key_value[layer_idx][0].shape[-2]
+        kv_cache_image_num = buget_layers[layer_idx] * \
+            past_key_value[layer_idx][0].shape[-2]
         if self.vlcache_different_window_per_layer:
             # different window size for each layer
-            kv_cache_window_num = buget_layers[layer_idx] * past_key_value[layer_idx][0].shape[-2] * 0.1
+            kv_cache_window_num = buget_layers[layer_idx] * \
+                past_key_value[layer_idx][0].shape[-2] * 0.1
         else:
             # same window size for each layer , 10% budget for each layer
-            kv_cache_window_num =  past_key_value[layer_idx][0].shape[-2] * self.vlcache_alpha_sparsity * 0.1
+            kv_cache_window_num = past_key_value[layer_idx][0].shape[-2] * \
+                self.vlcache_alpha_sparsity * 0.1
         kv_cache_image_num_int = int(torch.ceil(kv_cache_image_num).item())
         kv_cache_window_num_int = math.ceil(kv_cache_window_num)
         # choose window
         sorted_attn_kv_select_window = torch.arange(
-            past_key_value[layer_idx][0].shape[-2] - kv_cache_window_num_int, 
+            past_key_value[layer_idx][0].shape[-2] - kv_cache_window_num_int,
             past_key_value[layer_idx][0].shape[-2],
-            device = sorted_attn_kv_indices.device
+            device=sorted_attn_kv_indices.device
         )
 
         # choose other tokens
         if self.vlcache_head_adaptive:
             assert len(sorted_attn_kv_indices.shape) == 4
             # [layer, batch_size, head_num , kv_len]
-            sorted_attn_kv_indices_layer = sorted_attn_kv_indices[layer_idx,0,:,:]
-            sorted_attn_kv_select_window = sorted_attn_kv_select_window.repeat(sorted_attn_kv_indices.shape[2], 1) 
-            mask = ~ torch.isin(sorted_attn_kv_indices_layer,sorted_attn_kv_select_window)
+            sorted_attn_kv_indices_layer = sorted_attn_kv_indices[layer_idx, 0, :, :]
+            sorted_attn_kv_select_window = sorted_attn_kv_select_window.repeat(
+                sorted_attn_kv_indices.shape[2], 1)
+            mask = ~ torch.isin(sorted_attn_kv_indices_layer,
+                                sorted_attn_kv_select_window)
             sorted_attn_kv_select_image = torch.stack([
-                    row[m] for row, m in zip(sorted_attn_kv_indices_layer, mask)
-                ])
-            sorted_attn_kv_select_image = sorted_attn_kv_select_image[:,:kv_cache_image_num_int]
+                row[m] for row, m in zip(sorted_attn_kv_indices_layer, mask)
+            ])
+            sorted_attn_kv_select_image = sorted_attn_kv_select_image[:,
+                                                                      :kv_cache_image_num_int]
         else:
             assert len(sorted_attn_kv_indices.shape) == 2
             # [layer,kv_len]
             sorted_attn_kv_indices_layer = sorted_attn_kv_indices[layer_idx]
-            mask = ~ torch.isin(sorted_attn_kv_indices_layer,sorted_attn_kv_select_window)
+            mask = ~ torch.isin(sorted_attn_kv_indices_layer,
+                                sorted_attn_kv_select_window)
             sorted_attn_kv_select_image = sorted_attn_kv_indices_layer[mask]
             sorted_attn_kv_select_image = sorted_attn_kv_select_image[:kv_cache_image_num_int]
 
-        sorted_attn_kv_select = torch.cat([sorted_attn_kv_select_image, sorted_attn_kv_select_window], dim=-1)
+        sorted_attn_kv_select = torch.cat(
+            [sorted_attn_kv_select_image, sorted_attn_kv_select_window], dim=-1)
         sorted_attn_kv_select = torch.sort(sorted_attn_kv_select, dim=-1)[0]
 
         if self.vlcache_head_adaptive:
-            self.prefill_update_head(past_key_value, layer_idx, sorted_attn_kv_select)
+            self.prefill_update_head(
+                past_key_value, layer_idx, sorted_attn_kv_select)
         else:
-            past_key_value.key_cache[layer_idx] = past_key_value.key_cache[layer_idx][:, :, sorted_attn_kv_select,:]
-            past_key_value.value_cache[layer_idx] = past_key_value.value_cache[layer_idx][:, :, sorted_attn_kv_select,:]
-
+            past_key_value.key_cache[layer_idx] = past_key_value.key_cache[layer_idx][:,
+                                                                                      :, sorted_attn_kv_select, :]
+            past_key_value.value_cache[layer_idx] = past_key_value.value_cache[layer_idx][:,
+                                                                                          :, sorted_attn_kv_select, :]
 
     def get_sparsity_layer(
         self,
-        attn_weights_postvison:torch.Tensor, 
-        q_len:int,
-        post_vision_size:int,
+        attn_weights_postvison: torch.Tensor,
+        q_len: int,
+        post_vision_size: int,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         '''
         Called in the forward function of Qwen2Attention, Calculate the sparsity of this layer based on attn_weights_postvision
         '''
         # get max scores from one row
-        max_scores,_ = torch.max(attn_weights_postvison, axis=-1, keepdims=True)
+        max_scores, _ = torch.max(
+            attn_weights_postvison, axis=-1, keepdims=True)
         # filter the attn_weights_postvison
-        filtered_attn_weights = (attn_weights_postvison >= 0.01 * max_scores).int()
+        filtered_attn_weights = (
+            attn_weights_postvison >= 0.01 * max_scores).int()
         # get nonzero entries
-        nonzero_entries = (filtered_attn_weights > 0).sum(dim=(-2, -1)).to(torch.float32)
-        matrix_tril = torch.tril(torch.ones((q_len, q_len), device=attn_weights_postvison.device))[-post_vision_size:, :]
+        nonzero_entries = (filtered_attn_weights > 0).sum(
+            dim=(-2, -1)).to(torch.float32)
+        matrix_tril = torch.tril(torch.ones(
+            (q_len, q_len), device=attn_weights_postvison.device))[-post_vision_size:, :]
         num_elements_denominator = matrix_tril.count_nonzero().to(torch.float32)
         # get sparsity of each layer
-        sparsity = (num_elements_denominator - nonzero_entries) / num_elements_denominator
+        sparsity = (num_elements_denominator - nonzero_entries) / \
+            num_elements_denominator
         sparsity_layer = sparsity.mean()
         sparsity_layer_tuple = (sparsity_layer,)
         return sparsity_layer_tuple
-    
+
     def get_budget_layer_and_sorted_attn_kv_indices(
         self,
-        vlcache_sparsity_layer_tuple:Tuple[torch.Tensor],
-        vlcache_attn_weights_importance_tuple:Tuple[torch.Tensor],
-        layers:int,
+        vlcache_sparsity_layer_tuple: Tuple[torch.Tensor],
+        vlcache_attn_weights_importance_tuple: Tuple[torch.Tensor],
+        layers: int,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         '''
         Called in the forward function of Qwen2Model, after the prefill phase ends, the sparsity of each layer is aggregated 
         to reallocate according to the budget, and the token importance is calculated
         '''
-        sparsity_tensor = torch.stack([layer_sparsity[0] for layer_sparsity in vlcache_sparsity_layer_tuple])
+        sparsity_tensor = torch.stack(
+            [layer_sparsity[0] for layer_sparsity in vlcache_sparsity_layer_tuple])
         non_sparsity_sum = (1 - sparsity_tensor).sum()
         buget_layers = torch.zeros(layers)
         # Support different window sizes for each layer
         for l in range(layers):
             if self.vlcache_different_window_per_layer:
                 # different window size for each layer
-                buget_layers[l] = torch.clamp((1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * layers, min=0.01, max=1.0)
+                buget_layers[l] = torch.clamp(
+                    (1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * layers, min=0.01, max=1.0)
             else:
                 # same window size for each layer , 10% budget for each layer
-                buget_layers[l] = torch.clamp((1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * 0.9 * layers, min=0.01, max=1.0)
-        
+                buget_layers[l] = torch.clamp(
+                    (1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * 0.9 * layers, min=0.01, max=1.0)
+
         # [ layers , batch_size , head_num , all_kv_len]
-        stacked_attn_weights_importance = torch.stack([attn_weights_importance[0] for attn_weights_importance in vlcache_attn_weights_importance_tuple])
-        
+        stacked_attn_weights_importance = torch.stack(
+            [attn_weights_importance[0] for attn_weights_importance in vlcache_attn_weights_importance_tuple])
+
         if not self.vlcache_head_adaptive:
-            # if not head adaptive , sum over head and batch. 
-            attn_weights_importance_sum_layer = stacked_attn_weights_importance.sum(dim=[1, 2])
-            sorted_attn_kv, sorted_indices = torch.sort(attn_weights_importance_sum_layer, dim=-1, descending=True)
+            # if not head adaptive , sum over head and batch.
+            attn_weights_importance_sum_layer = stacked_attn_weights_importance.sum(dim=[
+                                                                                    1, 2])
+            sorted_attn_kv, sorted_indices = torch.sort(
+                attn_weights_importance_sum_layer, dim=-1, descending=True)
         else:
-            sorted_attn_kv, sorted_indices = torch.sort(stacked_attn_weights_importance, dim=-1, descending=True)
+            sorted_attn_kv, sorted_indices = torch.sort(
+                stacked_attn_weights_importance, dim=-1, descending=True)
         return buget_layers, sorted_indices
-    
+
     def get_token_importance(
         self,
-        attn_weights_postvison:torch.Tensor, 
+        attn_weights_postvison: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         '''
         Called in the forward function of Qwen2Attention , Calculate the token importance based on the attn_weights_postvisa of the current header
@@ -404,42 +467,44 @@ class VlCacheKVCluster():
         attn_weights_importance_tuple = (attn_weights_importance,)
 
         return attn_weights_importance_tuple
-    
+
     def prefill_update_head(
         self,
-        past_key_value:Cache, 
+        past_key_value: Cache,
         layer_idx: int,
         sorted_attn_kv_indices: torch.Tensor,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
-        
+
         # Create new tensors to store the reordered states
         past_key_states = past_key_value.key_cache[layer_idx]
         past_value_states = past_key_value.value_cache[layer_idx]
         batch_size = past_key_states.shape[0]
-        num_heads = past_key_states.shape[1] 
+        num_heads = past_key_states.shape[1]
         head_dim = past_key_states.shape[-1]
         seq_len = sorted_attn_kv_indices.shape[-1]
-        
+
         # Initialize new tensors with the right shape
-        new_key_states = torch.zeros((batch_size, num_heads, seq_len, head_dim), 
-                                dtype=past_key_states.dtype,
-                                device=past_key_states.device)
+        new_key_states = torch.zeros((batch_size, num_heads, seq_len, head_dim),
+                                     dtype=past_key_states.dtype,
+                                     device=past_key_states.device)
         new_value_states = torch.zeros((batch_size, num_heads, seq_len, head_dim),
-                                    dtype=past_value_states.dtype,
-                                    device=past_value_states.device)
-        
+                                       dtype=past_value_states.dtype,
+                                       device=past_value_states.device)
+
         # Reorder each head separately
         for head_idx in range(num_heads):
-            new_key_states[:, head_idx] = past_key_states[:, head_idx, sorted_attn_kv_indices[head_idx]]
-            new_value_states[:, head_idx] = past_value_states[:, head_idx, sorted_attn_kv_indices[head_idx]]
-        
+            new_key_states[:, head_idx] = past_key_states[:,
+                                                          head_idx, sorted_attn_kv_indices[head_idx]]
+            new_value_states[:, head_idx] = past_value_states[:,
+                                                              head_idx, sorted_attn_kv_indices[head_idx]]
+
         # Update the cache
         past_key_value.key_cache[layer_idx] = new_key_states
         past_key_value.value_cache[layer_idx] = new_value_states
 
-     
+
 class LOOK_MCluster():
-    def __init__(self,hh_size=4,recent_size=512,k_seq_dim=2,v_seq_dim=2,hh_ratio=None,recent_ratio=None, layer_idx=None, budget=None, merge=True):
+    def __init__(self, hh_size=4, recent_size=512, k_seq_dim=2, v_seq_dim=2, hh_ratio=None, recent_ratio=None, layer_idx=None, budget=None, merge=True):
         self.hh_size = hh_size
         self.recent_size = recent_size
         # self.cache_size = hh_size + recent_size
@@ -452,50 +517,60 @@ class LOOK_MCluster():
         self.budget = budget
         self.layer_idx = layer_idx
         if self.budget is not None and self.hh_ratio is not None and self.recent_ratio is not None:
-            raise ValueError('budget, hh_ratio, recent_ratio 不能同时设置。要么只设置budget,要么设置hh_ratio和recent_ratio')
+            raise ValueError(
+                'budget, hh_ratio, recent_ratio 不能同时设置。要么只设置budget,要么设置hh_ratio和recent_ratio')
         self.merge = merge
 
     def reset(self):
         self.importance = None
         self.seq_len = None
 
+    # FIXME 这里由于qwen2采用的是分组注意力机制，所以这里目前采用的方法就是取平均
+    def get_importance(self, attn_score_cache, total_heads=28, kv_heads=4):
 
-    def get_importance(self, attn_score_cache, total_heads=28, kv_heads=4):   # FIXME 这里由于qwen2采用的是分组注意力机制，所以这里目前采用的方法就是取平均
-        
         num_new_tokens = attn_score_cache.shape[2]
 
         if self.importance is None:
             origin = attn_score_cache.sum(0).sum(1)   # [28, 7587]
-            self.importance = origin.view(kv_heads, total_heads // kv_heads, -1).mean(dim=1)   # 改了一下分组注意力求的方式
+            self.importance = origin.view(
+                kv_heads, total_heads // kv_heads, -1).mean(dim=1)   # 改了一下分组注意力求的方式
         else:
-            # breakpoint() # check here 
+            # breakpoint() # check here
             raise NotImplementedError('LOOK-M方法不会进入这个分支，检查外部代码是否出现了问题')
-            # one_to_seven_score = attn_score_cache.sum(0).sum(1)   
+            # one_to_seven_score = attn_score_cache.sum(0).sum(1)
             # aaa = one_to_seven_score.view(4, 7, -1).mean(dim=1)
             # aaa[..., :-num_new_tokens] = aaa[..., :-num_new_tokens] + self.hh_score
             # self.hh_score = aaa
-    
-    def update(self, attn_score_cache):   # 这里的attension score cache就是attension weights   
-        if self.hh_ratio is not None and self.recent_ratio is not None and attn_score_cache.shape[-2]>1:  # 判断new_seq_len是否大于1，即是否是prefill阶段
-            self.hh_size = int(attn_score_cache.shape[-1] * self.hh_ratio)  # 309  列这个的目的就是个例子，为了和下面的代码注释对应，能知道每个数的根源是什么
-            self.recent_size = int(attn_score_cache.shape[-1] * self.recent_ratio)  # 309
+
+    def update(self, attn_score_cache):   # 这里的attension score cache就是attension weights
+        # 判断new_seq_len是否大于1，即是否是prefill阶段
+        if self.hh_ratio is not None and self.recent_ratio is not None and attn_score_cache.shape[-2] > 1:
+            # 309  列这个的目的就是个例子，为了和下面的代码注释对应，能知道每个数的根源是什么
+            self.hh_size = int(attn_score_cache.shape[-1] * self.hh_ratio)
+            self.recent_size = int(
+                attn_score_cache.shape[-1] * self.recent_ratio)  # 309
             self.budget = self.hh_size + self.recent_size
             # self.image_save_ratio = self.hh_ratio
         elif self.budget is not None:
             self.hh_size = int(attn_score_cache.shape[-1] * self.budget * 0.9)
-            self.recent_size = int(attn_score_cache.shape[-1] * self.budget * 0.1)
+            self.recent_size = int(
+                attn_score_cache.shape[-1] * self.budget * 0.1)
             self.budget = self.hh_size + self.recent_size
         self.get_importance(attn_score_cache)
 
-    def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups, text_mask, head_dim, dropout, training, origin_key_states, origin_value_states, merge=True):  # attn_score_cache是[bsz, num_heads, new_seq_len, total_seq_len]
+    # attn_score_cache是[bsz, num_heads, new_seq_len, total_seq_len]
+    def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups, text_mask, head_dim, dropout, training, origin_key_states, origin_value_states, merge=True):
         assert len(text_mask) == 1, '当前只能处理一个batch'
 
-        attn_score_cache = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(head_dim)
+        attn_score_cache = torch.matmul(
+            query_states, key_states.transpose(2, 3)) / math.sqrt(head_dim)
         if attention_mask is not None:  # no matter the length, we just slice it
             causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
             attn_score_cache = attn_score_cache + causal_mask
-        attn_score_cache = nn.functional.softmax(attn_score_cache, dim=-1, dtype=torch.float32).to(query_states.dtype)
-        attn_score_cache = nn.functional.dropout(attn_score_cache, p=dropout, training=training)
+        attn_score_cache = nn.functional.softmax(
+            attn_score_cache, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        attn_score_cache = nn.functional.dropout(
+            attn_score_cache, p=dropout, training=training)
 
         # if self.hh_ratio is not None and attn_score_cache.shape[-2]>1:  # 判断new_seq_len是否大于1，即是否是prefill阶段
         #     self.hh_size = int(attn_score_cache.shape[-1] * self.hh_ratio)  # 309  列这个的目的就是个例子，为了和下面的代码注释对应，能知道每个数的根源是什么
@@ -514,113 +589,249 @@ class LOOK_MCluster():
             # print('*'*30)
 
         self.update(attn_score_cache)
-        seq_len = origin_key_states.size(self.k_seq_dim)  # [bsz, num_kv_heads, seq_len, kv_head_dim]
+        # [bsz, num_kv_heads, seq_len, kv_head_dim]
+        seq_len = origin_key_states.size(self.k_seq_dim)
 
         if seq_len <= self.budget:   # 直接返回
             return origin_key_states, origin_value_states, None, None
 
         # hh-selection
-        bsz, num_heads, _, head_dim = origin_key_states.shape # [1, 32, seq_len, 128]
-        #################################only-image######################################
+        # [1, 32, seq_len, 128]
+        bsz, num_heads, _, head_dim = origin_key_states.shape
+        ################################# only-image######################################
         # image_position = self.image_position.clone()  # list [ 1, 99, 23423, 34235435]
         # for i in range(self.image_position.shape[0]):   # FIXME 算图片偏移
         #     image_position[i] = image_position[i] + 575 * i
         # anti_image_mask = torch.full((self.hh_score.shape[0], self.hh_score.shape[1]), 0)
         # for i in range(self.image_position.shape[0]):
         #     anti_image_mask[:, image_position[i]:image_position[i]+576] = -65516
-        make_image_less_important = torch.full((self.importance.shape[0], self.importance.shape[1]), 0)  #  FIXME 换成了我的写法
+        make_image_less_important = torch.full(
+            (self.importance.shape[0], self.importance.shape[1]), 0)  # FIXME 换成了我的写法
         # anti_image_mask = [[0 if item is True else -65536 for item in my_mask[0]]]
-        image_mask = [False if item is True else True for item in text_mask[0]]  # True表示这个位置需要被“去掉”
+        # True表示这个位置需要被“去掉”
+        image_mask = [False if item is True else True for item in text_mask[0]]
         make_image_less_important[:, image_mask] = -10000
-        make_image_less_important = make_image_less_important.to(device=self.importance.device, dtype=self.importance.dtype)
+        make_image_less_important = make_image_less_important.to(
+            device=self.importance.device, dtype=self.importance.dtype)
         make_image_less_important[:, -self.recent_size:] = -10000
-        self.importance = self.importance + make_image_less_important  # 其实根本不是按论文中说的那么做的。没有取最大
-        _, keep_topk = torch.topk(self.importance[:, :-self.recent_size], self.hh_size, dim=-1)  # keep_topk是[4, 758]
+        self.importance = self.importance + \
+            make_image_less_important  # 其实根本不是按论文中说的那么做的。没有取最大
+        _, keep_topk = torch.topk(
+            self.importance[:, :-self.recent_size], self.hh_size, dim=-1)  # keep_topk是[4, 758]
         keep_topk = keep_topk.sort().values
         # mask those keeping tok
-        self.importance.scatter_(1, keep_topk, 0)  #沿着第1维，把所有留下的token置为0
+        self.importance.scatter_(1, keep_topk, 0)  # 沿着第1维，把所有留下的token置为0
         self.importance[:, -self.recent_size:] = 0  # recent 一定会被留下
         mask = self.importance >= 0  # 是个bool矩阵，true就表示留下来
-        expanded_mask = mask.unsqueeze(0).unsqueeze(-1).expand_as(origin_key_states)    # 【1， 4， 7587， 128】
-        k_hh_recent = torch.masked_select(origin_key_states, expanded_mask).view(bsz, num_heads, -1, head_dim)  
-        v_hh_recent = torch.masked_select(origin_value_states, expanded_mask).view(bsz, num_heads, -1, head_dim)  
-        ##################only-image#################################
-        ###############################only-image-merge###################################
+        expanded_mask = mask.unsqueeze(
+            0).unsqueeze(-1).expand_as(origin_key_states)    # 【1， 4， 7587， 128】
+        k_hh_recent = torch.masked_select(
+            origin_key_states, expanded_mask).view(bsz, num_heads, -1, head_dim)
+        v_hh_recent = torch.masked_select(
+            origin_value_states, expanded_mask).view(bsz, num_heads, -1, head_dim)
+        ################## only-image#################################
+        ############################### only-image-merge###################################
         # applying merge here
         if self.merge:
-            k_hh_pruned = torch.masked_select(origin_key_states, ~expanded_mask).view(bsz, num_heads, -1, head_dim)  # [1, 32, 3098 - 309 * 2, 128]
+            k_hh_pruned = torch.masked_select(origin_key_states, ~expanded_mask).view(
+                bsz, num_heads, -1, head_dim)  # [1, 32, 3098 - 309 * 2, 128]
             with torch.autocast(device_type="cuda", dtype=torch.float32):
-                similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
-                max_values, max_indices = similarity.max(dim=-1)  # max_indices是[1, 4, 6071]
-            
+                similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(
+                    k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2))  # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
+                max_values, max_indices = similarity.max(
+                    dim=-1)  # max_indices是[1, 4, 6071]
+
             # pivot merge
             # similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
             # max_values, max_indices = similarity.max(dim=-1)  # max_indices是[1, 4, 6071]
             # if self.layer_idx == 0:
             #     print('共有{}个token和小于3的（sink）相似度最高'.format(str((max_indices[0][0] < 3).sum() + (max_indices[0][1] < 3).sum() + (max_indices[0][2] < 3).sum() + (max_indices[0][3] < 3).sum())))
-            merged_indices = max_indices.unsqueeze(-1).repeat(1, 1, 1, 128)  # [1, 4, 6071, 128]。
-            k_hh_selected = torch.gather(input=k_hh_recent, dim=2, index=merged_indices)
+            # [1, 4, 6071, 128]。
+            merged_indices = max_indices.unsqueeze(-1).repeat(1, 1, 1, 128)
+            k_hh_selected = torch.gather(
+                input=k_hh_recent, dim=2, index=merged_indices)
             k_hh_merged = (k_hh_pruned + k_hh_selected)/2
-            k_hh_recent = torch.scatter_reduce(input=k_hh_recent, dim=2, index=merged_indices, src=k_hh_merged, reduce='mean', include_self=True) # include_self=True seems decrease the performance
-            v_hh_pruned = origin_value_states.squeeze()[~mask].view(bsz, num_heads, -1, head_dim)
-            v_hh_selected = torch.gather(input=v_hh_recent, dim=2, index=merged_indices)
+            # include_self=True seems decrease the performance
+            k_hh_recent = torch.scatter_reduce(
+                input=k_hh_recent, dim=2, index=merged_indices, src=k_hh_merged, reduce='mean', include_self=True)
+            v_hh_pruned = origin_value_states.squeeze(
+            )[~mask].view(bsz, num_heads, -1, head_dim)
+            v_hh_selected = torch.gather(
+                input=v_hh_recent, dim=2, index=merged_indices)
             v_hh_merged = (v_hh_pruned + v_hh_selected)/2
-            v_hh_recent = torch.scatter_reduce(input=v_hh_recent, dim=2, index=merged_indices, src=v_hh_merged, reduce='mean', include_self=True)
-        ####################################only-image-merge#############################
+            v_hh_recent = torch.scatter_reduce(
+                input=v_hh_recent, dim=2, index=merged_indices, src=v_hh_merged, reduce='mean', include_self=True)
+        #################################### only-image-merge#############################
         # if self.layer_idx == 0:
         #     print('压缩后的长度为： ', end='')
         #     print(k_hh_recent.shape[-2])
         #     print('*'*30)
 
         return k_hh_recent, v_hh_recent, None, None    # 最后多加了两个参数，为了分析用
+
+
+class SnapKVCluster():
+    def __init__(self,
+                 query_len,
+                 budgets,
+                 window_size_budgets=0.1,
+                 head_adaptive=True,
+                 kernel_size=5,
+                 pooling='avgpool',
+                 merge=None):
+        self.query_len = query_len
+        self.budgets = budgets  # 保留比
+        self.max_capacity_prompt = int(query_len * budgets)
+        self.window_size_budgets = window_size_budgets  # 窗口大小比
+        self.window_size = int(self.max_capacity_prompt * window_size_budgets)
+        self.head_adaptive = head_adaptive
+        self.pooling = pooling
+        self.kernel_size = kernel_size
+        self.merge = merge
+
+    def reset(self,
+              budgets,
+              window_size_budgets=0.1,
+              head_adaptive=True,
+              kernel_size=5,
+              pooling='avgpool',
+              merge=None):
+
+        self.query_len = None
+        self.budgets = budgets  # 保留比
+        self.window_size_budgets = window_size_budgets  # 窗口大小比
+        self.window_size = None
+        self.max_capacity_prompt = None
+        self.merge = merge
+        self.pooling = pooling,
+        self.kernel_size = kernel_size,
+        self.head_adaptive = head_adaptive
+
+    def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups):
         
+        bsz, num_heads, q_len, head_dim = query_states.shape
+        assert key_states.shape[1] == num_heads // num_key_value_groups
+        key_states_repeat = repeat_kv(key_states, num_key_value_groups)
+        if q_len < self.max_capacity_prompt:
+            return key_states, value_states
+        else:
+            attn_weights = torch.matmul(
+                query_states[..., -self.window_size:, :], key_states_repeat.transpose(2, 3)) / math.sqrt(head_dim)
+            mask = torch.full((self.window_size, self.window_size), torch.finfo(
+                attn_weights.dtype).min, device=attn_weights.device)
+            mask_cond = torch.arange(mask.size(-1), device=attn_weights.device)
+            mask.masked_fill_(mask_cond < (
+                mask_cond + 1).view(mask.size(-1), 1), 0)
+            mask = mask.to(attn_weights.device)
+            attention_mask = mask[None, None, :, :]
+
+            attn_weights[:, :, -self.window_size:, -
+                         self.window_size:] += attention_mask
+
+            attn_weights = nn.functional.softmax(
+                attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)  
+            # bsz, num_heads, window_size, seq_len
+            
+            attn_weights = attn_weights.view(bsz, num_heads // num_key_value_groups, num_key_value_groups, -1, key_states.shape[-2])
+            
+            if self.head_adaptive:
+                attn_weights_sum = attn_weights[..., :-self.window_size].sum(dim=[-3, -2])
+            else:
+                attn_weights_sum = attn_weights[..., :-self.window_size].sum(dim=[1, 2, 3]).unsqueeze(1).expand(-1, num_heads // num_key_value_groups, -1)
+            # attn_weights_sum = attn_weights[:, :, -
+            #                                 self.window_size:, : -self.window_size].sum(dim=-2)
+            if self.pooling == 'avgpool':
+                attn_cache = F.avg_pool1d(
+                    attn_weights_sum, kernel_size=self.kernel_size, padding=self.kernel_size//2, stride=1)
+            elif self.pooling == 'maxpool':
+                attn_cache = F.max_pool1d(
+                    attn_weights_sum, kernel_size=self.kernel_size, padding=self.kernel_size//2, stride=1)
+            else:
+                raise ValueError('Pooling method not supported')
+            
+            indices = attn_cache.topk(
+                self.max_capacity_prompt - self.window_size, dim=-1).indices
+            indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
+            k_past_compress = key_states[:, :, :-
+                                         self.window_size, :].gather(dim=2, index=indices)
+            v_past_compress = value_states[:, :, :-
+                                           self.window_size, :].gather(dim=2, index=indices)
+            k_cur = key_states[:, :, -self.window_size:, :]
+            v_cur = value_states[:, :, -self.window_size:, :]
+            key_states = torch.cat([k_past_compress, k_cur], dim=2)
+            value_states = torch.cat([v_past_compress, v_cur], dim=2)
+            return key_states, value_states
+
 
 def init_StreamingLLM(self,
-                      query_len, 
-                      window_size_budgets = 0.1, 
-                      budgets = 0.3, 
-                      merge = None, 
+                      query_len,
+                      window_size_budgets=0.1,
+                      budgets=0.3,
+                      merge=None,
                       ):
 
     self.kv_cluster = StreamingLLMKVCluster(
         query_len=query_len,
-        budgets = budgets,
-        window_size_budgets = window_size_budgets,
-        merge = merge,
-        )
+        budgets=budgets,
+        window_size_budgets=window_size_budgets,
+        merge=merge,
+    )
+
 
 def init_H2O(self,
-            query_len, 
-            head_adaptive,
-            window_size_budgets = 0.1, 
-            budgets = 0.3, 
-            merge = None, 
-            ):
+             query_len,
+             head_adaptive,
+             window_size_budgets=0.1,
+             budgets=0.3,
+             merge=None,
+             ):
 
     self.kv_cluster = H2OKVCluster(
         query_len=query_len,
-        budgets = budgets,
-        window_size_budgets = window_size_budgets,
+        budgets=budgets,
+        window_size_budgets=window_size_budgets,
         head_adaptive=head_adaptive,
-        merge = merge,
-        )   
-    
+        merge=merge,
+    )
+
+
 def init_Vlcache(self):
 
     self.kv_cluster = VlCacheKVCluster(
-        vlcache_alpha_sparsity = self.vlcache_alpha_sparsity,
-        vlcache_different_window_per_layer = self.vlcache_different_window_per_layer,
-        vlcache_head_adaptive = self.vlcache_head_adaptive,
-        )
+        vlcache_alpha_sparsity=self.vlcache_alpha_sparsity,
+        vlcache_different_window_per_layer=self.vlcache_different_window_per_layer,
+        vlcache_head_adaptive=self.vlcache_head_adaptive,
+    )
+
 
 def init_LOOK_M(self):
     self.kv_cache = LOOK_MCluster(
-            k_seq_dim=2,
-            v_seq_dim=2,
-            hh_ratio=self.hh_ratio,
-            recent_ratio=self.recent_ratio,
-            layer_idx = self.layer_idx,
-            budget = self.budget,
-            merge = self.merge
-        )
+        k_seq_dim=2,
+        v_seq_dim=2,
+        hh_ratio=self.hh_ratio,
+        recent_ratio=self.recent_ratio,
+        layer_idx=self.layer_idx,
+        budget=self.budget,
+        merge=self.merge
+    )
 
+
+def init_snapkv(self,
+                query_len,
+                budgets,
+                window_size_budgets=0.1,
+                head_adaptive=True,
+                kernel_size=5,
+                pooling='avgpool',
+                merge=None
+             ):
+    
+    self.kv_cluster = SnapKVCluster(
+        query_len=query_len,
+        budgets=budgets,
+        window_size_budgets=window_size_budgets,
+        head_adaptive=head_adaptive,
+        kernel_size=kernel_size,
+        pooling=pooling,
+        merge=merge,
+    )
