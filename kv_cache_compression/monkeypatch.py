@@ -1,8 +1,8 @@
 import transformers
 from .qwen_model import qwen_attention_forward_streamingLLM, qwen_attention_forward_H2O, qwen_decode_forward
 from .qwen_model import qwen_attention_forward_streamingLLM, qwen_decode_forward,qwen_attention_forward_vlcache
-from .qwen_model import qwen_attention_forward_streamingLLM, qwen_model_forward_vlcache,qwen_attention_forward_vlcache
-from .qwen_model import qwen_attention_forward_streamingLLM, qwen_model_forward_vlcache,qwen_attention_forward_vlcache,qwen_attention_forward_LOOK_M
+from .qwen_model import qwen_attention_forward_streamingLLM, qwen_model_forward_vlcache, qwen_attention_forward_vlcache
+from .qwen_model import qwen_attention_forward_streamingLLM, qwen_model_forward_vlcache, qwen_attention_forward_vlcache, qwen_attention_forward_LOOK_M
 from .kv_cache_utils import VlCacheKVCluster
 
 def replace_qwen(args, method):
