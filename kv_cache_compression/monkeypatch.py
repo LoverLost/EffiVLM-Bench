@@ -7,6 +7,7 @@ from .qwen_model import (
     qwen_attention_forward_LOOK_M,
     qwen_attention_forward_snapkv
 )
+
 from .kv_cache_utils import VlCacheKVCluster
 
 
@@ -30,8 +31,7 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_different_window_per_layer = args.vlcache_different_window_per_layer
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_head_adaptive = args.vlcache_head_adaptive
 
-
-    elif method == 'look-m':
+    elif method =='look-m':
         print('using look-m')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.hh_ratio = getattr(
             args, 'hh_ratio', None)
@@ -54,3 +54,4 @@ def replace_mistral(method):
 
 def replace_llama(method):
     pass
+
