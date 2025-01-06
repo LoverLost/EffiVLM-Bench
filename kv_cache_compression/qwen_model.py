@@ -15,8 +15,7 @@ from transformers.utils import (
     logging,
     add_start_docstrings_to_model_forward,
 )
-from .kv_cache_utils import init_StreamingLLM,init_H2O
-from .kv_cache_utils import init_StreamingLLM,init_Vlcache
+from .kv_cache_utils import init_StreamingLLM, init_H2O, init_Vlcache, init_LOOK_M
 import math
 from flash_attn import flash_attn_func, flash_attn_varlen_func
 from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
@@ -24,6 +23,7 @@ from .cache_utils import streamingLLMCache
 
 logger = logging.get_logger(__name__)
 from lmms_eval.utils import eval_logger
+from copy import deepcopy
 
 QWEN2_INPUTS_DOCSTRING = r"""
     Args:
@@ -305,9 +305,9 @@ def qwen_attention_forward_H2O(
                 kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
         else:
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-            
-    key_states = repeat_kv(key_states, self.num_key_value_groups)
-    value_states = repeat_kv(value_states, self.num_key_value_groups)
+    
+    
+    
     if past_key_value is not None:
         # sin and cos are specific to RoPE models; cache_position needed for the static cache
         cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
@@ -319,7 +319,11 @@ def qwen_attention_forward_H2O(
             self.kv_seq_len += q_len
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
         past_key_value._seen_tokens=self.kv_seq_len
-
+           
+           
+            
+    key_states = repeat_kv(key_states, self.num_key_value_groups)
+    value_states = repeat_kv(value_states, self.num_key_value_groups)
     
     attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
     if attention_mask is not None:  # no matter the length, we just slice it
@@ -748,3 +752,115 @@ def qwen_decode_forward(
         hidden_states=all_hidden_states,
         attentions=all_self_attns,
     )
+
+
+def qwen_attention_forward_LOOK_M(
+    self,   # 就是Qwen2Attention 
+    hidden_states: torch.Tensor,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    past_key_value: Optional[Cache] = None,
+    output_attentions: bool = False,
+    use_cache: bool = False,
+    cache_position: Optional[torch.LongTensor] = None,
+    position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.45
+    **kwargs,
+) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+    
+    # my_mask = kwargs.get("my_mask", None) 
+    # init_LOOK_M(self)
+    bsz, q_len, _ = hidden_states.size()
+    if q_len > 1:   # 只在prefill阶段初始化
+        init_LOOK_M(self)
+        if hasattr(self, "kv_seq_len"):
+            self.kv_seq_len = 0    # q_len > 1 证明到了下一个sample阶段，kv_seq_len在第一个sample的时候会被初始化，从第二个开始只需要置空即可
+    
+    input_shape = hidden_states.shape[:-1]
+    hidden_shape = (*input_shape, -1, self.head_dim)
+
+    query_states = self.q_proj(hidden_states).view(hidden_shape).transpose(1, 2)   # bsz, num_heads, q_len, head_dim
+    key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+    value_states = self.v_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+
+
+
+    kv_seq_len = key_states.shape[-2]
+    cos, sin = position_embeddings
+    query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
+    if past_key_value is not None:
+        if self.layer_idx is None:
+            raise ValueError(
+                f"The cache structure has changed since version v4.36. If you are using {self.__class__.__name__} "
+                "for auto-regressive decoding with k/v caching, please make sure to initialize the attention class "
+                "with a layer index."
+            )
+        if hasattr(self, "kv_seq_len"):
+            if self.kv_seq_len != 0:
+                kv_seq_len += self.kv_seq_len
+            else:
+                kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
+        else:
+            kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
+
+    origin_key_states = deepcopy(key_states)    #  必须保留住原来的key，因为look-m方法需要用到
+    origin_value_states = deepcopy(value_states)
+
+
+    # 应该在这里拼接上kv cache
+    if q_len == 1:  # 证明当前是decode阶段，已经存在kv cache了，需要进行拼接
+        key_states = torch.cat([past_key_value.key_cache[self.layer_idx], key_states], dim=2)
+        value_states = torch.cat([past_key_value.value_cache[self.layer_idx], value_states], dim=2)
+    
+    key_states = repeat_kv(key_states, self.num_key_value_groups)
+    value_states = repeat_kv(value_states, self.num_key_value_groups)
+    
+    attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+    if attention_mask is not None:  # no matter the length, we just slice it
+        causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+        attn_weights = attn_weights + causal_mask
+
+    # upcast attention to fp32
+    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+    attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
+
+    # 在这里赶紧算attn_output
+    attn_output = torch.matmul(attn_weights, value_states)
+
+    if past_key_value is not None:
+        # sin and cos are specific to RoPE models; cache_position needed for the static cache
+        cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
+        if origin_key_states.shape[-2] == kv_seq_len:   # prefill 阶段
+            # self.kv_seq_len = kv_seq_len
+            # save_dir_1 = f"/home/rcmu/read_papers/MLLM-Efficiency-main/records/{self.hh_ratio}_{self.recent_ratio}/max_indices"
+            # save_dir_2 = f"/home/rcmu/read_papers/MLLM-Efficiency-main/records/{self.hh_ratio}_{self.recent_ratio}/similarities"
+            # os.makedirs(save_dir_1, exist_ok=True)
+            # os.makedirs(save_dir_2, exist_ok=True)
+            key_states_compress, value_states_compress, max_indices, similarity = self.kv_cache.update_kv(key_states, query_states, value_states, attention_mask, self.num_key_value_groups, self.text_image_mask, self.head_dim, self.attention_dropout, self.training, origin_key_states, origin_value_states)
+            # with torch.autocast(device_type="cuda", dtype=torch.float32):
+            #     similarity = (origin_key_states / torch.norm(origin_key_states, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((origin_key_states / (torch.norm(origin_key_states, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2))
+            # save_path_1 = f"/home/rcmu/read_papers/MLLM-Efficiency-main/records/{self.hh_ratio}_{self.recent_ratio}/max_indices/layer_{self.layer_idx}_indices.pt"
+            # save_path_2 = f"/home/rcmu/read_papers/MLLM-Efficiency-main/records/{self.hh_ratio}_{self.recent_ratio}/similarities/layer_{self.layer_idx}_similarity.pt"
+            # torch.save(max_indices, save_path_1)
+            # torch.save(similarity, save_path_2)
+    
+            past_key_value.update(key_states_compress, value_states_compress, self.layer_idx, cache_kwargs)
+            self.kv_seq_len = key_states_compress.shape[-2]   # 这里需要把压缩之后的长度写进去
+        else:
+            self.kv_seq_len += q_len
+            key_states, value_states = past_key_value.update(origin_key_states, origin_value_states, self.layer_idx, cache_kwargs)
+        past_key_value._seen_tokens=self.kv_seq_len
+
+    if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
+        raise ValueError(
+            f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
+            f" {attn_output.size()}"
+        )
+
+    attn_output = attn_output.transpose(1, 2).contiguous()
+
+    attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
+    attn_output = self.o_proj(attn_output)
+    if not output_attentions:
+        attn_weights = None
+    
+    return attn_output, attn_weights, past_key_value
