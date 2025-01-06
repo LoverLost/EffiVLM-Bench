@@ -18,7 +18,7 @@ python3 -m accelerate.commands.launch \
     --num_processes=4 \
     -m lmms_eval \
     --model llava_onevision_with_kvcache \
-    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=h2o,budgets=0.1 \
+    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=h2o,budgets=0.01 \
     --tasks docvqa_test  \
     --batch_size 1 \
     --log_samples \
@@ -42,11 +42,11 @@ python3 -m accelerate.commands.launch \
 python3 -m accelerate.commands.launch \
     --main_process_port=28175 \
     --mixed_precision=bf16 \
-    --num_processes=4 \
+    --num_processes=2 \
     -m lmms_eval \
     --model llava_onevision_with_kvcache \
-    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=h2o,budgets=0.01 \
-    --tasks docvqa_test  \
+    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=h2o,budgets=0.01,h2o_head_adaptive=false \
+    --tasks chartqa  \
     --batch_size 1 \
     --log_samples \
     --log_samples_suffix chartqa \

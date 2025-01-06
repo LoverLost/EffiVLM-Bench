@@ -232,23 +232,28 @@ class H2OKVCluster():
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups):
 
         bsz, num_heads, q_len, head_dim = query_states.shape
+        assert key_states.shape[1] == num_heads // num_key_value_groups
         if q_len < self.max_capacity_prompt:
             return key_states, value_states
-
-        attn_weights = torch.matmul(query_states, key_states.transpose(-2, -1)) / math.sqrt(head_dim)
-        dtype_min = torch.finfo(attn_weights.dtype).min
-        mask = torch.triu(
-            torch.full((self.window_size, self.window_size), dtype_min, device=attn_weights.device),
-            diagonal=1,
-        )
-        attn_weights[:, :, -self.window_size:, -self.window_size:] += mask
-
+        key_states_repeat = repeat_kv(key_states, num_key_value_groups)
+        attn_weights = torch.matmul(query_states, key_states_repeat.transpose(-2, -1)) / math.sqrt(head_dim)
+        
+        # implementation of kv-factory
+        # dtype_min = torch.finfo(attn_weights.dtype).min
+        # mask = torch.triu(
+        #     torch.full((self.window_size, self.window_size), dtype_min, device=attn_weights.device),
+        #     diagonal=1,
+        # )
+        # attn_weights[:, :, -self.window_size:, -self.window_size:] += mask
+        
+        attn_weights += attention_mask
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+        attn_weights = attn_weights.view(bsz, num_heads // num_key_value_groups, num_key_value_groups, q_len, -1)
+        
         if self.head_adaptive:
-            attn_weights_sum = attn_weights[:, :, :, :-self.window_size].sum(dim=-2)
+            attn_weights_sum = attn_weights[:, :, :, :, :-self.window_size].sum(dim=[-3,-2])
         else:
-
-            attn_weights_sum = attn_weights[:, :, :, :-self.window_size].sum(dim=[1, 2]).unsqueeze(1).expand(-1, num_heads, -1)
+            attn_weights_sum = attn_weights[:, :, :, :, :-self.window_size].sum(dim=[1,2,3]).unsqueeze(1).expand(-1, num_heads // num_key_value_groups, -1)
 
         indices = attn_weights_sum.topk(self.max_capacity_prompt - self.window_size, dim=-1).indices
         indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)

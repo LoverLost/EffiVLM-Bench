@@ -1,7 +1,9 @@
 import transformers
-from .qwen_model import qwen_attention_forward_streamingLLM, qwen_model_forward_vlcache,qwen_attention_forward_vlcache,qwen_attention_forward_LOOK_M
+from .qwen_model import qwen_attention_forward_streamingLLM, qwen_attention_forward_H2O, qwen_decode_forward
+from .qwen_model import qwen_attention_forward_streamingLLM, qwen_decode_forward,qwen_attention_forward_vlcache
+from .qwen_model import qwen_attention_forward_streamingLLM, qwen_model_forward_vlcache, qwen_attention_forward_vlcache
+from .qwen_model import qwen_attention_forward_streamingLLM, qwen_model_forward_vlcache, qwen_attention_forward_vlcache, qwen_attention_forward_LOOK_M
 from .kv_cache_utils import VlCacheKVCluster
-
 
 def replace_qwen(args, method):
     
@@ -9,9 +11,14 @@ def replace_qwen(args, method):
         print('using streamingllm')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_streamingLLM
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = args.budgets
+    elif method == "h2o":
+        print('using h2o')
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_H2O
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = args.budgets
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.h2o_head_adaptive = args.h2o_head_adaptive
         # transformers.models.qwen2.modeling_qwen2.Qwen2Model.forward = qwen_decode_forward
 
-    if method == "vl-cache":
+    elif method == "vl-cache":
         print('using vlcache')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_vlcache
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.forward = qwen_model_forward_vlcache
@@ -31,7 +38,7 @@ def replace_qwen(args, method):
         # 清空 vlcache_attn_weights_importance_tuple vlcache_sparsity_layer_tuple vlcache_first_after_prefill
         # 读入 
 
-    if method =='look-m':
+    elif method =='look-m':
         print('using look-m')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.hh_ratio = getattr(args, 'hh_ratio', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.recent_ratio = getattr(args, 'recent_ratio', None)

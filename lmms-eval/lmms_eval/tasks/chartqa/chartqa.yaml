@@ -1,6 +1,7 @@
-dataset_path: lmms-lab/ChartQA
+dataset_path: /share/home/mhma/MLLM-Efficiency/datasets/chartqa
 dataset_kwargs:
-  token: True
+  token: False
+  load_from_disk:  True
 task: "chartqa"
 test_split: test
 output_type: generate_until
@@ -31,4 +32,4 @@ lmms_eval_specific_kwargs:
   qwen_vl:
     pre_prompt: ""
     post_prompt: " Answer:"
-
+    

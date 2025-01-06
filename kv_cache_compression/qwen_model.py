@@ -305,9 +305,9 @@ def qwen_attention_forward_H2O(
                 kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
         else:
             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-            
-    key_states = repeat_kv(key_states, self.num_key_value_groups)
-    value_states = repeat_kv(value_states, self.num_key_value_groups)
+    
+    
+    
     if past_key_value is not None:
         # sin and cos are specific to RoPE models; cache_position needed for the static cache
         cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}
@@ -319,7 +319,11 @@ def qwen_attention_forward_H2O(
             self.kv_seq_len += q_len
             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
         past_key_value._seen_tokens=self.kv_seq_len
-
+           
+           
+            
+    key_states = repeat_kv(key_states, self.num_key_value_groups)
+    value_states = repeat_kv(value_states, self.num_key_value_groups)
     
     attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
     if attention_mask is not None:  # no matter the length, we just slice it
