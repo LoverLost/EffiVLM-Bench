@@ -51,3 +51,17 @@ python3 -m accelerate.commands.launch \
     --log_samples \
     --log_samples_suffix chartqa \
     --output_path ./logs/docvqa_test/h2o/
+
+
+python3 -m accelerate.commands.launch \
+    --main_process_port=28175 \
+    --mixed_precision=bf16 \
+    --num_processes=2 \
+    -m lmms_eval \
+    --model llava_onevision_with_kvcache \
+    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=h2o,budgets=0.05,h2o_head_adaptive=false \
+    --tasks textvqa_val  \
+    --batch_size 1 \
+    --log_samples \
+    --log_samples_suffix textvqa_val \
+    --output_path ./logs/textvqa_val/h2o/
