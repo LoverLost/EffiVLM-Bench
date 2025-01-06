@@ -18,7 +18,7 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.h2o_head_adaptive = args.h2o_head_adaptive
         # transformers.models.qwen2.modeling_qwen2.Qwen2Model.forward = qwen_decode_forward
 
-    if method == "vl-cache":
+    elif method == "vl-cache":
         print('using vlcache')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_vlcache
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.forward = qwen_model_forward_vlcache
@@ -38,7 +38,7 @@ def replace_qwen(args, method):
         # 清空 vlcache_attn_weights_importance_tuple vlcache_sparsity_layer_tuple vlcache_first_after_prefill
         # 读入 
 
-    if method =='look-m':
+    elif method =='look-m':
         print('using look-m')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.hh_ratio = getattr(args, 'hh_ratio', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.recent_ratio = getattr(args, 'recent_ratio', None)
