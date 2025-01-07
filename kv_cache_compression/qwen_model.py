@@ -932,6 +932,7 @@ def qwen_attention_forward_snapkv(
                  q_len,
                  budgets=self.budgets,
                  head_adaptive=self.snapkv_head_adaptive,
+                 pooling=self.pooling,
                  )
         self.kv_seq_len = 0
 

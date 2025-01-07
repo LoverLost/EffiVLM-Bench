@@ -746,6 +746,8 @@ class SnapKVCluster():
             elif self.pooling == 'maxpool':
                 attn_cache = F.max_pool1d(
                     attn_weights_sum, kernel_size=self.kernel_size, padding=self.kernel_size//2, stride=1)
+            elif self.pooling == "no":
+                attn_cache = attn_weights_sum
             else:
                 raise ValueError('Pooling method not supported')
             
