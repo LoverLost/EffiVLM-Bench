@@ -5,7 +5,9 @@ from .qwen_model import (
     qwen_model_forward_vlcache,
     qwen_attention_forward_vlcache,
     qwen_attention_forward_LOOK_M,
-    qwen_attention_forward_snapkv
+    qwen_attention_forward_snapkv,
+    qwen_model_forward_fastv,
+    qwen_attention_forward_fastv
 )
 
 from .kv_cache_utils import VlCacheKVCluster
@@ -48,6 +50,16 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_snapkv
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = args.budgets
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.snapkv_head_adaptive = args.snapkv_head_adaptive
+
+    elif method == 'fastv':
+        print('using fastv')
+        transformers.models.qwen2.modeling_qwen2.Qwen2Model.forward = qwen_model_forward_fastv
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_fastv
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.target_layer_idx = getattr(args, 'target_layer_idx', None)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Model.target_layer_idx = getattr(args, 'target_layer_idx', None)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Model.budgets = getattr(args, 'budgets', None)   # visual part
+        transformers.models.qwen2.modeling_qwen2.Qwen2Model.origin = getattr(args, 'origin', None)
+
 def replace_mistral(method):
     pass
 
