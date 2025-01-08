@@ -151,8 +151,7 @@ class Llava_OneVision_with_kvcache(lmms):
             llava_model_args.pop("multimodal", None)
             self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, **llava_model_args)
 
-        
-        
+
         self.method = method
         
         # not change
@@ -196,6 +195,10 @@ class Llava_OneVision_with_kvcache(lmms):
             else:
                 self._model = accelerator.prepare_model(self.model, evaluation_mode=True)
                 # self._model = self.model
+                
+            # for name,param in self._model.named_parameters():
+            #     print(name,param.dtype)
+            # exit()
             self.accelerator = accelerator
             if self.accelerator.is_local_main_process:
                 eval_logger.info(f"Using {accelerator.num_processes} devices with data parallelism")

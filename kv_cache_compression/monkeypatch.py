@@ -7,7 +7,8 @@ from .qwen_model import (
     qwen_attention_forward_LOOK_M,
     qwen_attention_forward_snapkv,
     qwen_model_forward_fastv,
-    qwen_attention_forward_fastv
+    qwen_attention_forward_fastv,
+    qwen_attn_forward_PyramidKV,
 )
 
 from .kv_cache_utils import VlCacheKVCluster
@@ -61,6 +62,14 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.budgets = getattr(args, 'budgets', None)   # visual part
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.origin = getattr(args, 'origin', None)
 
+    elif method == 'pyramidkv':
+        print('using pyramidkv')
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attn_forward_PyramidKV
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = args.budgets
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.pyramidkv_head_adaptive = args.pyramidkv_head_adaptive
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.pooling = args.pooling
+        
+        
 def replace_mistral(method):
     pass
 

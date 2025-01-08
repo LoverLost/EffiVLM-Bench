@@ -59,9 +59,9 @@ python3 -m accelerate.commands.launch \
     --num_processes=2 \
     -m lmms_eval \
     --model llava_onevision_with_kvcache \
-    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=h2o,budgets=0.05,h2o_head_adaptive=false \
+    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=pyramidkv,budgets=0.05,pyramidkv_head_adaptive=true,pooling=avgpool \
     --tasks textvqa_val  \
     --batch_size 1 \
     --log_samples \
     --log_samples_suffix textvqa_val \
-    --output_path ./logs/textvqa_val/h2o/
+    --output_path ./logs/textvqa_val/pyramidkv/
