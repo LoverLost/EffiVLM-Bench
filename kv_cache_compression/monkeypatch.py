@@ -50,7 +50,7 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_snapkv
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = args.budgets
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.snapkv_head_adaptive = args.snapkv_head_adaptive
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.snapkv_head_adaptive = args.pooling
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.pooling = args.pooling
 
     elif method == 'fastv':
         print('using fastv')
