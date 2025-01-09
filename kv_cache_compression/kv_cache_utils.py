@@ -9,6 +9,7 @@ from typing import List
 
 from typing import List, Optional, Tuple
 from transformers.cache_utils import Cache
+from flash_attention_softmax_n import softmax_n
 
 
 def key_pruner_query_driven(kv_states, q_states, recent_size=128, ratio=0.3):
@@ -943,6 +944,174 @@ class pyramidkvCluster():
             value_states = torch.cat([v_past_compress, v_cur], dim=2)
             return key_states, value_states
 
+class CSPCluster():
+    def __init__(
+        self,
+        text_image_mask_csp,
+        hh_size=4,
+        recent_size=512,
+        hh_ratio=None,
+        recent_ratio=None,
+        cross_ratio=0.1,
+        kv_recent_bias=1,
+        budget=None,
+        csp_head_adaptive=False,
+    ):
+        self.text_image_mask_csp = text_image_mask_csp
+        self.hh_size = hh_size
+        self.recent_size = recent_size
+        self.cache_size = hh_size + recent_size 
+        self.hh_ratio = hh_ratio
+        self.recent_ratio = recent_ratio
+        self.cross_ratio = cross_ratio
+        self.kv_recent_bias = kv_recent_bias
+        self.budget = budget
+        self.csp_head_adaptive = csp_head_adaptive
+
+    def update_kv(self, key_states, value_states, query_states, attn_score_cache, attn_mask):
+
+        if self.cross_ratio is None:
+            self.cross_ratio = 0.1
+        if self.kv_recent_bias is None:
+            self.kv_recent_bias = 1
+        
+        if attn_score_cache.shape[-2]>1:
+            if self.hh_ratio is not None and self.recent_ratio is not None and self.budget is None:
+                self.hh_size = math.ceil(attn_score_cache.shape[-1] * self.hh_ratio)
+                self.recent_size = math.ceil(attn_score_cache.shape[-1] * self.recent_ratio)
+                self.cache_size = self.hh_size + self.recent_size
+            elif self.budget is not None:
+                self.hh_size = math.ceil(attn_score_cache.shape[-1] * self.budget * 0.9)
+                self.recent_size = math.ceil(attn_score_cache.shape[-1] * self.budget * 0.1)
+                self.cache_size = self.hh_size + self.recent_size
+            else:
+                raise ValueError('The CSP method requires setting hh_ratio and recent_ratio at the same time or you can set budget separately.')
+            
+            ####### add new here ###########################
+
+            assert key_states.shape[-2] == query_states.shape[-2]
+
+            bsz, num_heads, q_len, head_dim = query_states.shape
+            _, kv_num_heads, k_len, _ = key_states.shape
+
+            if q_len < self.cache_size:
+                return key_states, value_states
+
+            else:
+                
+                img_mask = self.text_image_mask_csp.clone() # #ALFRED: tensor([112, 142, 163, 191, 213], hh_score: [32, 2789]
+                img_mask = img_mask.to(device=attn_score_cache.device, dtype=torch.bool)
+                attn_weights = attn_score_cache
+                selection_func = 'one-softmax'
+
+                attn_weights = self.apply_selection_function(attn_weights, selection_func)
+                # attn_weights_past = attn_weights[:, :, -self.recent_size:, :-self.recent_size]
+
+                q_observe_recent = self.recent_size
+                if self.kv_recent_bias != 1:
+                    kv_recent_size = math.ceil(self.recent_size * self.kv_recent_bias)
+                else:
+                    kv_recent_size = self.recent_size
+                k = self.cache_size - kv_recent_size # k: 309 self.cache_size: 618 self.recent_size: 309
+
+                attn_weights_past = attn_weights[:, :, -q_observe_recent:, :-kv_recent_size] 
+                
+                # 扩展到 [B, H, Lq, Lk]
+                query_img_mask = img_mask[-q_observe_recent:].view(1, 1, -1).expand(bsz, num_heads, -1)  # [B, H, Lq]
+                # query_img_mask = img_mask.view(1, 1, -1).expand(bsz, num_heads, -1)  # [B, H, Lq]
+                key_img_mask = img_mask[:-kv_recent_size].view(1, 1, -1).expand(bsz, num_heads, -1)  # [B, H, Lk]
+
+                query_img_mask = query_img_mask.unsqueeze(-1)  # [B, H, Lq, 1]
+                key_img_mask = key_img_mask.unsqueeze(2)  # [B, H, 1, Lk]
+
+                # self-attn 和 cross-attn mask
+                self_attn_mask = (query_img_mask & key_img_mask) | (~query_img_mask & ~key_img_mask)  # [B, H, Lq, Lk]
+                cross_attn_mask = (query_img_mask & ~key_img_mask) | (~query_img_mask & key_img_mask)  # [B, H, Lq, Lk]
+
+                attn_weights_self = attn_weights_past * self_attn_mask  # self-attn 区域
+                attn_weights_cross = attn_weights_past * cross_attn_mask  # cross-attn 区域
+                
+                k_cross = math.ceil(k * self.cross_ratio)
+                k_self = math.ceil(k * (1-self.cross_ratio))
+                if self.cross_ratio <= 0:
+                    k_cross, k_self = 1, 308
+
+                # head adaptive
+                if self.csp_head_adaptive:
+                    attn_weights_self = attn_weights_self.view(bsz, kv_num_heads, -1, attn_weights_self.shape[-2], attn_weights_self.shape[-1])
+                    attn_weights_cross = attn_weights_cross.view(bsz, kv_num_heads, -1, attn_weights_cross.shape[-2], attn_weights_cross.shape[-1])
+                    attn_weights_self_sum = attn_weights_self.sum(dim=(-2,-3)) # [B, kv_num_heads, L_self]
+                    attn_weights_cross_sum = attn_weights_cross.sum(dim=(-2,-3)) # [B, kv_num_heads, L_cross]
+                else:
+                # layer adaptive
+                    attn_weights_self_sum = attn_weights_self.sum(dim=(-2,-3)).unsqueeze(1).expand(-1, kv_num_heads, -1) # [B, kv_num_heads, L_self]
+                    attn_weights_cross_sum = attn_weights_cross.sum(dim=(-2,-3)).unsqueeze(1).expand(-1, kv_num_heads, -1) # [B, kv_num_heads, L_cross]
+                
+                assert attn_weights_self_sum.shape == attn_weights_cross_sum.shape
+                assert len(attn_weights_self_sum.shape) == 3
+                assert attn_weights_self_sum.shape[1] == kv_num_heads
+                
+                self_indices = attn_weights_self_sum.topk(k_self, dim=-1).indices  # indices: [B, H, topk]
+                cross_indices = attn_weights_cross_sum.topk(k_cross, dim=-1).indices  # indices: [B, H, topk]
+
+                indices = torch.cat([self_indices, cross_indices], dim=-1)
+
+                indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
+                k_past_compress = key_states[:, :, :-kv_recent_size, :].gather(dim = 2, index = indices)
+                v_past_compress = value_states[:, :, :-kv_recent_size, :].gather(dim = 2, index = indices)
+                k_cur = key_states[:, :, -kv_recent_size:, :]
+                v_cur = value_states[:, :, -kv_recent_size:, :]
+                key_states = torch.cat([k_past_compress, k_cur], dim = 2)
+                value_states = torch.cat([v_past_compress, v_cur], dim = 2)
+
+                return key_states, value_states
+        else:
+            return key_states, value_states
+    
+    def apply_selection_function(self,attn_weights, selection_func, tau_init=1.0, tau_delta=0.1, iter_count=0, temp=1.0, query_states=None):
+        """
+        Apply a selection function to adjust attention weights based on the specified method.
+        
+        Parameters:
+        - attn_weights (Tensor): The attention weights tensor to be transformed.
+        - selection_func (str): The selection function to use ('gumbel', 'TaylorV1', 'TaylorV3', 'temp', 'one-softmax').
+        - tau_init (float): Initial temperature for Gumbel softmax.
+        - tau_delta (float): Delta for temperature adjustment in Gumbel softmax.
+        - iter_count (int): Iteration count, used to adjust temperature in Gumbel softmax.
+        - temp (float): Temperature for softmax scaling when using 'temp' selection.
+        - query_states (Tensor, optional): Query states tensor, used to determine dtype in certain cases.
+        
+        Returns:
+        - Tensor: The adjusted attention weights.
+        """
+        
+        if selection_func == 'gumbel':
+            # Apply Gumbel Softmax with dynamic temperature
+            tau = tau_init + (iter_count * tau_delta)
+            gumbel_score = nn.functional.gumbel_softmax(attn_weights, tau=tau, hard=False, dim=-1)
+            return gumbel_score.to(attn_weights.dtype)
+        
+        elif selection_func == 'TaylorV1':
+            # Apply TaylorSoftmaxV1
+            taylor_softmax_v1 = TaylorSoftmaxV1(dim=-1, n=4).to(attn_weights.device)
+            return taylor_softmax_v1(attn_weights).to(attn_weights.dtype)
+        
+        elif selection_func == 'TaylorV3':
+            # Apply TaylorSoftmaxV3
+            taylor_softmax_v3 = TaylorSoftmaxV3(dim=-1, n=4).to(attn_weights.device)
+            return taylor_softmax_v3(attn_weights).to(attn_weights.dtype)
+        
+        elif selection_func == 'temp':
+            # Apply scaled softmax with specified temperature
+            return (nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32) / temp).to(query_states.dtype)
+        
+        elif selection_func == 'one-softmax':
+            # Apply one-softmax using custom softmax function 'softmax_n'
+            return softmax_n(attn_weights, n=1, dim=-1, dtype=torch.float32)
+        
+        else:
+            # Default to standard softmax
+            return nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
 
 def init_StreamingLLM(self,
                       query_len,
@@ -1043,3 +1212,22 @@ def init_pyramidkv(self,
         beta=beta,      
         merge=merge,
     )
+
+def init_CSP(self):
+    
+    # need mask that text if false and image is true , batch_size = 1
+    tensor = torch.tensor(self.text_image_mask[0], dtype=torch.bool)
+    text_image_mask_csp = ~ tensor
+
+    self.kv_cluster = CSPCluster(
+        
+        text_image_mask_csp = text_image_mask_csp,
+        hh_size = 4,
+        recent_size = 512,
+        hh_ratio = self.hh_ratio,
+        recent_ratio = self.recent_ratio,
+        cross_ratio = self.cross_ratio,
+        kv_recent_bias = self.kv_recent_bias,
+        budget = self.budgets,
+        csp_head_adaptive = self.csp_head_adaptive,
+        )

@@ -9,6 +9,7 @@ from .qwen_model import (
     qwen_model_forward_fastv,
     qwen_attention_forward_fastv,
     qwen_attn_forward_PyramidKV,
+    qwen_attention_forward_CSP
 )
 
 from .kv_cache_utils import VlCacheKVCluster
@@ -61,6 +62,20 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.target_layer_idx = getattr(args, 'target_layer_idx', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.budgets = getattr(args, 'budgets', None)   # visual part
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.origin = getattr(args, 'origin', None)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.h2o_head_adaptive = args.h2o_head_adaptive
+    
+    elif method == "csp":
+        print('using csp')
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_CSP
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.hh_ratio = getattr(args, 'hh_ratio', None)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.recent_ratio = getattr(args, 'recent_ratio', None)
+        # The budget ratio allocated to cross-attention. The default value is 0.1
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.cross_ratio = getattr(args, 'cross_ratio', 0.1)
+        # The kv_recent_bias setting is how many times you want the recent window to be larger than the original window. The default value is 1, which means no additional increase in the window size.
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.kv_recent_bias = getattr(args, 'kv_recent_bias', 1)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = getattr(args, 'budgets', None)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.csp_head_adaptive = args.csp_head_adaptive
+
 
     elif method == 'pyramidkv':
         print('using pyramidkv')

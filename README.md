@@ -8,6 +8,8 @@
     conda activate mllm-efficiency
     pip install -r requirements.txt
     pip install ninja
+    pip install omegaconf
+    pip install flash-attention-softmax-n
     conda install pytorch==2.3.0 torchvision==0.18.0 torchaudio==2.3.0 pytorch-cuda=12.1 -c pytorch -c nvidia
     conda install nvidia/label/cuda-12.1.1::cuda-nvcc
     ```
