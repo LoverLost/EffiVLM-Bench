@@ -269,13 +269,14 @@ class SigLipMLP(nn.Module):
 
 # Copied from transformers.models.clip.modeling_clip.CLIPEncoderLayer with CLIP->SigLip
 class SigLipEncoderLayer(nn.Module):
-    def __init__(self, config: SigLipVisionConfig):
+    def __init__(self, config: SigLipVisionConfig, layer_idx:int):
         super().__init__()
         self.embed_dim = config.hidden_size
         self.self_attn = SigLipAttention(config)
         self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
         self.mlp = SigLipMLP(config)
         self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
+        self.layer_idx = layer_idx
 
     # Ignore copy
     def forward(
@@ -345,7 +346,7 @@ class SigLipEncoder(nn.Module):
     def __init__(self, config: SigLipVisionConfig):
         super().__init__()
         self.config = config
-        self.layers = nn.ModuleList([SigLipEncoderLayer(config) for _ in range(config.num_hidden_layers)])
+        self.layers = nn.ModuleList([SigLipEncoderLayer(config, layer_idx=i) for i in range(config.num_hidden_layers)])
         self.gradient_checkpointing = False
 
     # Ignore copy

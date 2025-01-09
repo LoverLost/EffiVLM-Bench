@@ -13,6 +13,7 @@ from .qwen_model import (
 )
 
 from .kv_cache_utils import VlCacheKVCluster
+from .siglip_model import *
 
 
 def replace_qwen(args, method):
@@ -83,6 +84,20 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = args.budgets
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.pyramidkv_head_adaptive = args.pyramidkv_head_adaptive
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.pooling = args.pooling
+
+    elif method == 'visionzip':
+        print('using visionzip')
+        from llava.model.multimodal_encoder.siglip_encoder import SigLipVisionTower, SigLipEncoderLayer, SigLipAttention
+        from llava.model.llava_arch import LlavaMetaForCausalLM
+        from llava.model.language_model.llava_qwen import LlavaQwenForCausalLM
+        # SigLipVisionTower.dominant = getattr(args, 'dominant_num')
+        # SigLipVisionTower.contextual = getattr(args, 'contextual_num')
+        SigLipVisionTower.budgets = getattr(args, 'budgets', None)
+        SigLipVisionTower.forward = siglip_vision_tower_forward
+        SigLipEncoderLayer.forward = siglip_EncoderLayer_forward
+        SigLipAttention.forward = siglip_attention_forward
+        LlavaMetaForCausalLM.encode_images_visionzip = encode_images_visionzip
+        LlavaQwenForCausalLM.prepare_inputs_labels_for_multimodal = prepare_inputs_labels_for_multimodal_visionzip
         
         
 def replace_mistral(method):
