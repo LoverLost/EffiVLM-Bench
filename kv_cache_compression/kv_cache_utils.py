@@ -14,7 +14,7 @@ from flash_attention_softmax_n import softmax_n
 
 def key_pruner_query_driven(kv_states, q_states, recent_size=128, ratio=0.3):
     _, _, seqlen, head_dim = kv_states.shape
-    k = int(head_dim * ratio)
+    k = max(1, int(head_dim * ratio))
     # new efficient implementation
     queries_norm = torch.pow(q_states[..., -32:, :], 2).mean(dim=2)
     keys_norm = torch.pow(kv_states, 2).mean(dim=2)
@@ -204,9 +204,9 @@ class StreamingLLMKVCluster():
     def __init__(self, query_len, budgets, window_size_budgets=0.1, merge=None):
         self.query_len = query_len
         self.budgets = budgets  # 保留比
-        self.max_capacity_prompt = int(query_len * budgets)
+        self.max_capacity_prompt = max(1, int(query_len * budgets))
         self.window_size_budgets = window_size_budgets  # 窗口大小比
-        self.window_size = int(self.max_capacity_prompt * window_size_budgets)
+        self.window_size = max(1, int(self.max_capacity_prompt * window_size_budgets))
         self.merge = merge
 
     def reset(self, budgets, window_size_budgets=0.1, merge=None):
@@ -249,9 +249,9 @@ class H2OKVCluster():
     def __init__(self, query_len, budgets, window_size_budgets=0.1, head_adaptive=True, merge=None):
         self.query_len = query_len
         self.budgets = budgets  # 保留比
-        self.max_capacity_prompt = int(query_len * budgets)
+        self.max_capacity_prompt = max(1, int(query_len * budgets))
         self.window_size_budgets = window_size_budgets  # 窗口大小比
-        self.window_size = int(self.max_capacity_prompt * window_size_budgets)
+        self.window_size = max(1, int(self.max_capacity_prompt * window_size_budgets))
         self.head_adaptive = head_adaptive
         self.merge = merge
 
@@ -344,8 +344,8 @@ class VlCacheKVCluster():
             # same window size for each layer , 10% budget for each layer
             kv_cache_window_num = past_key_value[layer_idx][0].shape[-2] * \
                 self.vlcache_alpha_sparsity * 0.1
-        kv_cache_image_num_int = int(torch.ceil(kv_cache_image_num).item())
-        kv_cache_window_num_int = math.ceil(kv_cache_window_num)
+        kv_cache_image_num_int = max(1, int(torch.ceil(kv_cache_image_num).item()))
+        kv_cache_window_num_int = max(1, math.ceil(kv_cache_window_num))
         # choose window
         sorted_attn_kv_select_window = torch.arange(
             past_key_value[layer_idx][0].shape[-2] - kv_cache_window_num_int,
@@ -547,15 +547,15 @@ class LOOK_MCluster():
         # 判断new_seq_len是否大于1，即是否是prefill阶段
         if self.hh_ratio is not None and self.recent_ratio is not None and attn_score_cache.shape[-2] > 1:
             # 309  列这个的目的就是个例子，为了和下面的代码注释对应，能知道每个数的根源是什么
-            self.hh_size = int(attn_score_cache.shape[-1] * self.hh_ratio)
-            self.recent_size = int(
-                attn_score_cache.shape[-1] * self.recent_ratio)  # 309
+            self.hh_size = max(1, int(attn_score_cache.shape[-1] * self.hh_ratio))
+            self.recent_size = max(1, int(
+                attn_score_cache.shape[-1] * self.recent_ratio))  # 309
             self.budget = self.hh_size + self.recent_size
             # self.image_save_ratio = self.hh_ratio
         elif self.budget is not None:
-            self.hh_size = int(attn_score_cache.shape[-1] * self.budget * 0.9)
-            self.recent_size = int(
-                attn_score_cache.shape[-1] * self.budget * 0.1)
+            self.hh_size = max(1, int(attn_score_cache.shape[-1] * self.budget * 0.9))
+            self.recent_size = max(1, int(
+                attn_score_cache.shape[-1] * self.budget * 0.1))
             self.budget = self.hh_size + self.recent_size
         self.get_importance(attn_score_cache)
 
@@ -682,9 +682,9 @@ class SnapKVCluster():
                  merge=None):
         self.query_len = query_len
         self.budgets = budgets  # 保留比
-        self.max_capacity_prompt = int(query_len * budgets)
+        self.max_capacity_prompt = max(1, int(query_len * budgets))
         self.window_size_budgets = window_size_budgets  # 窗口大小比
-        self.window_size = int(self.max_capacity_prompt * window_size_budgets)
+        self.window_size = max(1, int(self.max_capacity_prompt * window_size_budgets))
         self.head_adaptive = head_adaptive
         self.pooling = pooling
         self.kernel_size = kernel_size
@@ -789,9 +789,9 @@ class pyramidkvCluster():
         self.steps = -1
         self.beta = beta
 
-        self.max_capacity_prompt = int(query_len * budgets)
+        self.max_capacity_prompt = max(1, int(query_len * budgets))
         self.window_size_budgets = window_size_budgets  # 窗口大小比
-        self.window_size = int(self.max_capacity_prompt * window_size_budgets)
+        self.window_size = max(1, int(self.max_capacity_prompt * window_size_budgets))
         self.head_adaptive = head_adaptive
         self.kernel_size = kernel_size
         self.pooling = pooling
