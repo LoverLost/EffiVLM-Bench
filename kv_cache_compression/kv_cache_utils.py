@@ -15,6 +15,7 @@ from flash_attention_softmax_n import softmax_n
 def key_pruner_query_driven(kv_states, q_states, recent_size=128, ratio=0.3):
     _, _, seqlen, head_dim = kv_states.shape
     k = max(1, int(head_dim * ratio))
+    k = max(1, int(head_dim * ratio))
     # new efficient implementation
     queries_norm = torch.pow(q_states[..., -32:, :], 2).mean(dim=2)
     keys_norm = torch.pow(kv_states, 2).mean(dim=2)
