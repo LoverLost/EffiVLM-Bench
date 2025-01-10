@@ -79,6 +79,7 @@ python3 -m accelerate.commands.launch \
     --mixed_precision=bf16 \
     --num_processes=2 \
     -m lmms_eval \
+<<<<<<< HEAD
     --model llava_onevision_with_kvcache  \
     --model_args pretrained=/share/home/mhma/MLLM-Efficiency/models/origin/llava-onevision-qwen2-7b_llava_sparsegpt_pruner_0.5\
     --tasks chartqa  \
@@ -111,3 +112,12 @@ python3 -m accelerate.commands.launch \
 
 
 >>>>>>> ca07ceb (use flash-attn2 on qwen2vl)
+=======
+    --model qwen2_vl \
+    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-2B-Instruct-AWQ \
+    --tasks textvqa_val  \
+    --batch_size 1 \
+    --log_samples \
+    --log_samples_suffix textvqa_val \
+    --output_path ./logs/debug/
+>>>>>>> 48d8ccb (add prune methods)
