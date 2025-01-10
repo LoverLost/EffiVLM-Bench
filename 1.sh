@@ -65,3 +65,16 @@ python3 -m accelerate.commands.launch \
     --log_samples \
     --log_samples_suffix textvqa_val \
     --output_path ./logs/textvqa_val/pyramidkv/
+
+python3 -m accelerate.commands.launch \
+    --main_process_port=28175 \
+    --mixed_precision=bf16 \
+    --num_processes=2 \
+    -m lmms_eval \
+    --model qwen2_vl \
+    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-2B-Instruct-AWQ \
+    --tasks textvqa_val  \
+    --batch_size 1 \
+    --log_samples \
+    --log_samples_suffix textvqa_val \
+    --output_path ./logs/debug/
