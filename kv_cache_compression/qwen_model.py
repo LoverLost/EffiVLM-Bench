@@ -25,6 +25,7 @@ from .kv_cache_utils import (
     init_snapkv, 
     init_pyramidkv,
     init_CSP,
+    init_Random,
 )
 import math
 from flash_attn import flash_attn_func, flash_attn_varlen_func
@@ -1142,7 +1143,7 @@ def qwen_model_forward_fastv(
                         image_attention_score = last_attention.mean(dim=1)[0][-1][image_start:image_end + 1]    # FIXME 
                     else:
                         image_attention_score = last_attention.mean(dim=1)[0][:, image_start:image_end + 1].mean(dim=0)    # FIXME 
-                    top_attention_rank_index = image_attention_score.topk(int(image_length * ratio)).indices + image_start     
+                    top_attention_rank_index = image_attention_score.topk(max(1, int(image_length * ratio))).indices + image_start     
                     keep_indexs = torch.cat((torch.arange(image_start,device=device), top_attention_rank_index, torch.arange(image_length+image_start,seq_length,device=device)))
                     keep_indexs = keep_indexs.sort().values
                     hidden_states = hidden_states[:,keep_indexs,:]
@@ -1464,4 +1465,110 @@ def qwen_attention_forward_CSP(
     if not output_attentions:
         attn_weights = None
     
+    return attn_output, attn_weights, past_key_value
+
+def qwen_attention_forward_random(
+    self,
+    hidden_states: torch.Tensor,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    past_key_value: Optional[Cache] = None,
+    output_attentions: bool = False,
+    use_cache: bool = False,
+    cache_position: Optional[torch.LongTensor] = None,
+    position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.45
+    **kwargs,
+) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
+    bsz, q_len, _ = hidden_states.size()
+    if q_len > 1:   # 只在prefill阶段初始化
+        init_Random(self)
+        if hasattr(self, "kv_seq_len"):
+            self.kv_seq_len = 0
+
+    input_shape = hidden_states.shape[:-1]
+    hidden_shape = (*input_shape, -1, self.head_dim)
+
+    query_states = self.q_proj(hidden_states).view(
+        hidden_shape).transpose(1, 2)   # bsz, num_heads, q_len, head_dim
+    key_states = self.k_proj(hidden_states).view(hidden_shape).transpose(1, 2)
+    value_states = self.v_proj(hidden_states).view(
+        hidden_shape).transpose(1, 2)
+
+    kv_seq_len = key_states.shape[-2]
+    cos, sin = position_embeddings
+    query_states, key_states = apply_rotary_pos_emb(
+        query_states, key_states, cos, sin)
+    if past_key_value is not None:
+        if self.layer_idx is None:
+            raise ValueError(
+                f"The cache structure has changed since version v4.36. If you are using {self.__class__.__name__} "
+                "for auto-regressive decoding with k/v caching, please make sure to initialize the attention class "
+                "with a layer index."
+            )
+        if hasattr(self, "kv_seq_len"):
+            if self.kv_seq_len != 0:
+                kv_seq_len += self.kv_seq_len
+            else:
+                kv_seq_len += past_key_value.get_usable_length(
+                    kv_seq_len, self.layer_idx)
+        else:
+            kv_seq_len += past_key_value.get_usable_length(
+                kv_seq_len, self.layer_idx)
+
+    origin_key_states = deepcopy(key_states)  # 必须保留住原来的key，因为look-m方法需要用到
+    origin_value_states = deepcopy(value_states)
+
+    # 应该在这里拼接上kv cache
+    if q_len == 1:  
+        key_states = torch.cat(
+            [past_key_value.key_cache[self.layer_idx], key_states], dim=2)
+        value_states = torch.cat(
+            [past_key_value.value_cache[self.layer_idx], value_states], dim=2)
+
+    key_states = repeat_kv(key_states, self.num_key_value_groups)
+    value_states = repeat_kv(value_states, self.num_key_value_groups)
+
+    attn_weights = torch.matmul(
+        query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+    if attention_mask is not None:  # no matter the length, we just slice it
+        causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
+        attn_weights = attn_weights + causal_mask
+
+    # upcast attention to fp32
+    attn_weights = nn.functional.softmax(
+        attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+    attn_weights = nn.functional.dropout(
+        attn_weights, p=self.attention_dropout, training=self.training)
+
+
+    attn_output = torch.matmul(attn_weights, value_states)
+
+    if past_key_value is not None:
+        # sin and cos are specific to RoPE models; cache_position needed for the static cache
+        cache_kwargs = {"sin": sin, "cos": cos,
+                        "cache_position": cache_position}
+        if origin_key_states.shape[-2] == kv_seq_len:   # prefill 阶段
+            key_states_compress, value_states_compress= self.kv_cache.update_kv(origin_key_states, origin_value_states)
+            past_key_value.update(
+                key_states_compress, value_states_compress, self.layer_idx, cache_kwargs)
+            self.kv_seq_len = key_states_compress.shape[-2]   # 这里需要把压缩之后的长度写进去
+        else:
+            self.kv_seq_len += q_len
+            key_states, value_states = past_key_value.update(
+                origin_key_states, origin_value_states, self.layer_idx, cache_kwargs)
+        past_key_value._seen_tokens = self.kv_seq_len
+
+    if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
+        raise ValueError(
+            f"`attn_output` should be of size {(bsz, self.num_heads, q_len, self.head_dim)}, but is"
+            f" {attn_output.size()}"
+        )
+
+    attn_output = attn_output.transpose(1, 2).contiguous()
+
+    attn_output = attn_output.reshape(bsz, q_len, self.hidden_size)
+    attn_output = self.o_proj(attn_output)
+    if not output_attentions:
+        attn_weights = None
+
     return attn_output, attn_weights, past_key_value

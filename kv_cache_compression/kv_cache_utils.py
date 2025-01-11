@@ -1113,6 +1113,32 @@ class CSPCluster():
             # Default to standard softmax
             return nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
 
+
+class RandomCluster():
+    def __init__(self, budgets):
+        self.budgets = budgets
+    
+    def update_kv(self, origin_key_states, origin_value_states):
+        bsz, num_heads, seq_len, head_dim = origin_key_states.shape
+        select_num = int(seq_len * self.budgets)
+        
+        # 为每个batch和每个head生成随机索引，并排序以保持相对位置
+        indices = torch.stack([
+            torch.sort(torch.randperm(seq_len, device=origin_key_states.device)[:select_num])[0]
+            for _ in range(bsz * num_heads)
+        ]).view(bsz, num_heads, select_num)
+        
+        # 扩展indices以匹配head_dim维度
+        indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
+        
+        # 使用gather收集选中的token
+        selected_key_states = torch.gather(origin_key_states, dim=2, index=indices)
+        selected_value_states = torch.gather(origin_value_states, dim=2, index=indices)
+        
+        return selected_key_states, selected_value_states
+
+
+
 def init_StreamingLLM(self,
                       query_len,
                       window_size_budgets=0.1,
@@ -1231,3 +1257,6 @@ def init_CSP(self):
         budget = self.budgets,
         csp_head_adaptive = self.csp_head_adaptive,
         )
+
+def init_Random(self):
+    self.kv_cache = RandomCluster(budgets = self.budgets)

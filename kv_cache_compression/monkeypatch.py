@@ -9,7 +9,8 @@ from .qwen_model import (
     qwen_model_forward_fastv,
     qwen_attention_forward_fastv,
     qwen_attn_forward_PyramidKV,
-    qwen_attention_forward_CSP
+    qwen_attention_forward_CSP,
+    qwen_attention_forward_random
 )
 
 from .kv_cache_utils import VlCacheKVCluster
@@ -98,6 +99,11 @@ def replace_qwen(args, method):
         SigLipAttention.forward = siglip_attention_forward
         LlavaMetaForCausalLM.encode_images_visionzip = encode_images_visionzip
         LlavaQwenForCausalLM.prepare_inputs_labels_for_multimodal = prepare_inputs_labels_for_multimodal_visionzip
+
+    elif method == 'random':
+        print('using random')
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = getattr(args, 'budgets', None)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_random
         
         
 def replace_mistral(method):

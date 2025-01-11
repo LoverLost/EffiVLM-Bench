@@ -133,17 +133,19 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
             raise NotImplementedError("`inputs_embeds` is not supported")
 
         if images is not None:
-            if method.lower() == "vl-cache" or method.lower() == 'look-m' or method.lower() == 'fastv' or method.lower() == 'csp':
-                (inputs, position_ids, attention_mask, _, inputs_embeds, _, text_image_mask) = self.prepare_inputs_labels_mask_for_multimodal(inputs, position_ids, attention_mask, None, None, images, modalities, image_sizes=image_sizes)
-                # self.model.my_mask = my_mask 
-                # transformers.models.qwen2.modeling_qwen2.Qwen2Attention.kv_cache_mask = kv_cache_mask  #  直接一步写到transformer库中，这样保证外部的代码和具体的transformer库完全解耦  
-                for layer in self.base_model.layers:
-                    layer.self_attn.text_image_mask = text_image_mask
+            if method is not None:
+                if method.lower() == "vl-cache" or method.lower() == 'look-m' or method.lower() == 'fastv' or method.lower() == 'csp':
+                    (inputs, position_ids, attention_mask, _, inputs_embeds, _, text_image_mask) = self.prepare_inputs_labels_mask_for_multimodal(inputs, position_ids, attention_mask, None, None, images, modalities, image_sizes=image_sizes)
+                    # self.model.my_mask = my_mask 
+                    # transformers.models.qwen2.modeling_qwen2.Qwen2Attention.kv_cache_mask = kv_cache_mask  #  直接一步写到transformer库中，这样保证外部的代码和具体的transformer库完全解耦  
+                    for layer in self.base_model.layers:
+                        layer.self_attn.text_image_mask = text_image_mask
+                    
+                    if method.lower() == "fastv":
+                        self.base_model.text_image_mask = text_image_mask  # add this to support fastv
+                else:
+                    (inputs, position_ids, attention_mask, _, inputs_embeds, _) = self.prepare_inputs_labels_for_multimodal(inputs, position_ids, attention_mask, None, None, images, modalities, image_sizes=image_sizes)
                 
-                if method.lower() == "fastv":
-                    self.base_model.text_image_mask = text_image_mask  # add this to support fastv
-                
-
             else:
                 (inputs, position_ids, attention_mask, _, inputs_embeds, _) = self.prepare_inputs_labels_for_multimodal(inputs, position_ids, attention_mask, None, None, images, modalities, image_sizes=image_sizes)
                 
