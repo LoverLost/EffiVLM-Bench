@@ -99,6 +99,7 @@ def replace_qwen(args, method):
         SigLipEncoderLayer.forward = siglip_EncoderLayer_forward
         SigLipAttention.forward = siglip_attention_forward
         LlavaMetaForCausalLM.encode_images_visionzip = encode_images_visionzip
+        LlavaMetaForCausalLM.encode_images_visionzip_simple = encode_images_visionzip_simple
         LlavaQwenForCausalLM.prepare_inputs_labels_for_multimodal = prepare_inputs_labels_for_multimodal_visionzip
 
     elif method == 'random':

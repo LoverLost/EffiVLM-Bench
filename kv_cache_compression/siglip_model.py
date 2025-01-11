@@ -191,6 +191,12 @@ def encode_images_visionzip(self, images):
     image_features = self.get_model().mm_projector(image_features)
     return image_features, keep_idx
 
+def encode_images_visionzip_simple(self, images):
+    image_features, keep_idx = self.get_model().get_vision_tower()(images)
+    # image_features = self.get_model().vision_resampler(image_features, images=images)
+    image_features = self.get_model().mm_projector(image_features)
+    return image_features
+
 
 def unpad_image(tensor, original_size):
     """
@@ -417,7 +423,7 @@ def prepare_inputs_labels_for_multimodal_visionzip(self, input_ids, position_ids
         else:
             raise ValueError(f"Unexpected mm_patch_merge_type: {self.config.mm_patch_merge_type}")
     else:
-        image_features = self.encode_images(images)
+        image_features = self.encode_images_visionzip_simple(images)
 
     # TODO: image start / end is not implemented here to support pretraining.
     if getattr(self.config, "tune_mm_mlp_adapter", False) and getattr(self.config, "mm_use_im_start_end", False):
