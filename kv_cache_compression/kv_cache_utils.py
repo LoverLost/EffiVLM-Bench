@@ -314,7 +314,7 @@ class H2OKVCluster():
 
 class VlCacheKVCluster():
 
-    def __init__(self, vlcache_alpha_sparsity, vlcache_different_window_per_layer, vlcache_head_adaptive):
+    def __init__(self, vlcache_alpha_sparsity, vlcache_different_window_per_layer, vlcache_head_adaptive, vlcache_budget_layer_adaptive):
 
         self.vlcache_alpha_sparsity = vlcache_alpha_sparsity
         self.vlcache_different_window_per_layer = vlcache_different_window_per_layer
@@ -322,6 +322,7 @@ class VlCacheKVCluster():
         self.sparsity_layer_tuple = ()
         self.attn_weights_importance_tuple = ()
         self.isprefill = True
+        self.vlcache_budget_layer_adaptive = vlcache_budget_layer_adaptive
 
     def allocate_budget_and_update_kv(
             self,
@@ -431,16 +432,27 @@ class VlCacheKVCluster():
             [layer_sparsity[0] for layer_sparsity in vlcache_sparsity_layer_tuple])
         non_sparsity_sum = (1 - sparsity_tensor).sum()
         buget_layers = torch.zeros(layers)
-        # Support different window sizes for each layer
-        for l in range(layers):
+
+        # different budget for each layer
+        if self.vlcache_budget_layer_adaptive:
+            # Support different window sizes for each layer
+            for l in range(layers):
+                if self.vlcache_different_window_per_layer:
+                    # different window size for each layer
+                    buget_layers[l] = torch.clamp(
+                        (1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * layers, min=0.01, max=1.0)
+                else:
+                    # same window size for each layer , 10% budget for each layer
+                    buget_layers[l] = torch.clamp(
+                        (1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * 0.9 * layers, min=0.01 * 0.9, max=1.0)
+        # same budget for each layer
+        else:
             if self.vlcache_different_window_per_layer:
                 # different window size for each layer
-                buget_layers[l] = torch.clamp(
-                    (1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * layers, min=0.01, max=1.0)
+                buget_layers = torch.full((layers,), self.vlcache_alpha_sparsity, device=sparsity_tensor.device)
             else:
                 # same window size for each layer , 10% budget for each layer
-                buget_layers[l] = torch.clamp(
-                    (1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * 0.9 * layers, min=0.01, max=1.0)
+                buget_layers = torch.full((layers,), self.vlcache_alpha_sparsity * 0.9, device=sparsity_tensor.device)
 
         # [ layers , batch_size , head_num , all_kv_len]
         stacked_attn_weights_importance = torch.stack(
@@ -1177,6 +1189,7 @@ def init_Vlcache(self):
         vlcache_alpha_sparsity=self.vlcache_alpha_sparsity,
         vlcache_different_window_per_layer=self.vlcache_different_window_per_layer,
         vlcache_head_adaptive=self.vlcache_head_adaptive,
+        vlcache_budget_layer_adaptive=self.vlcache_budget_layer_adaptive,
     )
 
 

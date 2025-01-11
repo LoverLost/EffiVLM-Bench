@@ -36,6 +36,7 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_alpha_sparsity = args.budgets
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_different_window_per_layer = args.vlcache_different_window_per_layer
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_head_adaptive = args.vlcache_head_adaptive
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_budget_layer_adaptive = getattr(args, 'vlcache_budget_layer_adaptive', True)
 
     elif method =='look-m':
         print('using look-m')
