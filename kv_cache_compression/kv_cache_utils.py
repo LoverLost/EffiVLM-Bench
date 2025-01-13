@@ -576,7 +576,7 @@ class LOOK_MCluster():
         assert len(text_mask) == 1, '当前只能处理一个batch'
 
         attn_score_cache = torch.matmul(
-            query_states, key_states.transpose(2, 3)) / math.sqrt(head_dim)
+            query_states.float(), key_states.transpose(2, 3).float()) / math.sqrt(head_dim)
         if attention_mask is not None:  # no matter the length, we just slice it
             causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
             attn_score_cache = attn_score_cache + causal_mask
@@ -648,11 +648,13 @@ class LOOK_MCluster():
         if self.merge:
             k_hh_pruned = torch.masked_select(origin_key_states, ~expanded_mask).view(
                 bsz, num_heads, -1, head_dim)  # [1, 32, 3098 - 309 * 2, 128]
-            with torch.autocast(device_type="cuda", dtype=torch.float32):
-                similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(
-                    k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2))  # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
-                max_values, max_indices = similarity.max(
-                    dim=-1)  # max_indices是[1, 4, 6071]
+            # with torch.autocast(device_type="cuda", dtype=torch.float32):
+            k_hh_pruned = k_hh_pruned.float()
+            k_hh_recent = k_hh_recent.float()
+            similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(
+                k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2))  # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
+            max_values, max_indices = similarity.max(
+                dim=-1)  # max_indices是[1, 4, 6071]
 
             # pivot merge
             # similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
@@ -666,14 +668,15 @@ class LOOK_MCluster():
             k_hh_merged = (k_hh_pruned + k_hh_selected)/2
             # include_self=True seems decrease the performance
             k_hh_recent = torch.scatter_reduce(
-                input=k_hh_recent, dim=2, index=merged_indices, src=k_hh_merged, reduce='mean', include_self=True)
+                input=k_hh_recent.float(), dim=2, index=merged_indices, src=k_hh_merged.float(), reduce='mean', include_self=True).to(torch.bfloat16)
+            
             v_hh_pruned = origin_value_states.squeeze(
             )[~mask].view(bsz, num_heads, -1, head_dim)
             v_hh_selected = torch.gather(
                 input=v_hh_recent, dim=2, index=merged_indices)
             v_hh_merged = (v_hh_pruned + v_hh_selected)/2
             v_hh_recent = torch.scatter_reduce(
-                input=v_hh_recent, dim=2, index=merged_indices, src=v_hh_merged, reduce='mean', include_self=True)
+                input=v_hh_recent.float(), dim=2, index=merged_indices, src=v_hh_merged.float(), reduce='mean', include_self=True).to(torch.bfloat16)
         #################################### only-image-merge#############################
         # if self.layer_idx == 0:
         #     print('压缩后的长度为： ', end='')
