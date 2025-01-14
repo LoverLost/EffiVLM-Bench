@@ -91,65 +91,65 @@ class SparseGPT:
         Losses = torch.zeros(self.rows, device=self.dev)   # 512
         
         
-        import time
-        torch.cuda.synchronize()
-        start = time.time()
+        # import time
+        # torch.cuda.synchronize()
+        # start = time.time()
 
-        Hinv = torch.linalg.pinv(H)
-        torch.cuda.synchronize()
-        end = time.time()
+        # Hinv = torch.linalg.pinv(H)
+        # torch.cuda.synchronize()
+        # end = time.time()
         
-        print(f"Time to compute Hinv: {end - start:.6f}s")
-        # if (torch.isinf(H) * (H > 0)).float().sum() > 0:
-        #     pos = torch.isinf(H) * (H > 0)
-        #     H[pos] = torch.quantile(H, 0.999)
+        # print(f"Time to compute Hinv: {end - start:.6f}s")
+        if (torch.isinf(H) * (H > 0)).float().sum() > 0:
+            pos = torch.isinf(H) * (H > 0)
+            H[pos] = torch.quantile(H, 0.999)
             
-        # if (torch.isinf(H) * (H < 0)).float().sum() > 0:
-        #     pos = torch.isinf(H) * (H < 0)
-        #     H[pos] = torch.quantile(H, 0.001)
+        if (torch.isinf(H) * (H < 0)).float().sum() > 0:
+            pos = torch.isinf(H) * (H < 0)
+            H[pos] = torch.quantile(H, 0.001)
             
-        # damp = percdamp * torch.mean(torch.diag(H))
-        # diag = torch.arange(self.columns, device=self.dev)
+        damp = percdamp * torch.mean(torch.diag(H))
+        diag = torch.arange(self.columns, device=self.dev)
         
-        # while True:
-        #     try:
-        #         decompose_H = torch.linalg.cholesky(H)
+        while True:
+            try:
+                decompose_H = torch.linalg.cholesky(H)
                 
-        #         if not torch.isnan(decompose_H).any():
-        #             H = decompose_H
-        #             break
+                if not torch.isnan(decompose_H).any():
+                    H = decompose_H
+                    break
                 
-        #         if torch.isinf(damp).any():
-        #             import pdb; pdb.set_trace()      
-        #         H[diag, diag] += damp
-        #     except:
-        #         H[diag, diag] += damp
+                if torch.isinf(damp).any():
+                    import pdb; pdb.set_trace()      
+                H[diag, diag] += damp
+            except:
+                H[diag, diag] += damp
 
-        # H = torch.cholesky_inverse(H)
+        H = torch.cholesky_inverse(H)
         
-        # if (torch.isinf(H) * (H > 0)).float().sum() > 0:
-        #     pos = torch.isinf(H) * (H > 0)
-        #     H[pos] = torch.quantile(H, 0.999)
+        if (torch.isinf(H) * (H > 0)).float().sum() > 0:
+            pos = torch.isinf(H) * (H > 0)
+            H[pos] = torch.quantile(H, 0.999)
             
-        # if (torch.isinf(H) * (H < 0)).float().sum() > 0:
-        #     pos = torch.isinf(H) * (H < 0)
-        #     H[pos] = torch.quantile(H, 0.001)
+        if (torch.isinf(H) * (H < 0)).float().sum() > 0:
+            pos = torch.isinf(H) * (H < 0)
+            H[pos] = torch.quantile(H, 0.001)
             
-        # damp = percdamp * torch.mean(torch.diag(H).abs())
-        # diag = torch.arange(self.columns, device=self.dev)
+        damp = percdamp * torch.mean(torch.diag(H).abs())
+        diag = torch.arange(self.columns, device=self.dev)
         
-        # while True:
-        #     try:
-        #         decompose_H = torch.linalg.cholesky(H, upper=True)
+        while True:
+            try:
+                decompose_H = torch.linalg.cholesky(H, upper=True)
                 
-        #         if not torch.isnan(decompose_H).any():
-        #             H = decompose_H
-        #             break
-        #         H[diag, diag] += damp
-        #     except:
-        #         H[diag, diag] += damp
+                if not torch.isnan(decompose_H).any():
+                    H = decompose_H
+                    break
+                H[diag, diag] += damp
+            except:
+                H[diag, diag] += damp
 
-        # Hinv = H
+        Hinv = H
         
         
         s = W ** 2 / (torch.diag(Hinv).reshape((1, -1))) ** 2
