@@ -380,6 +380,9 @@ class LayerSparsity:
             return self.global_iterative_pruning(
                 original_sparsity, layer_to_group_mapping, iteratation=3, max_sparsity_per_layer=1.0
             )
+        
+        
+        
         if layer_to_group_mapping is None or len(layer_to_group_mapping) == 0:
             class uniform_sparsity_module:
                 def __getitem__(self, key):

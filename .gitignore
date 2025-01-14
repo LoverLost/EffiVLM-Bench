@@ -70,3 +70,5 @@ sparsegpt.sh
 test-clash.sh
 test.sh
 *.out
+*.sh
+models/
