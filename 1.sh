@@ -71,10 +71,29 @@ python3 -m accelerate.commands.launch \
     --mixed_precision=bf16 \
     --num_processes=2 \
     -m lmms_eval \
-    --model qwen2_vl \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-2B-Instruct-AWQ \
-    --tasks textvqa_val  \
+    --model llava_onevision_with_kvcache \
+    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=streamingllm,budgets=0.4 \
+    --tasks mathvista  \
     --batch_size 1 \
     --log_samples \
-    --log_samples_suffix textvqa_val \
-    --output_path ./logs/debug/
+    --log_samples_suffix mathvista \
+    --output_path ./logs/mathvista/
+
+
+
+python3 -m accelerate.commands.launch \
+    --main_process_port=28175 \
+    --mixed_precision=bf16 \
+    --num_processes=2 \
+    -m lmms_eval \
+    --model llava_onevision_with_kvcache  \
+    --model_args pretrained=/share/home/mhma/MLLM-Efficiency/models/origin/llava-onevision-qwen2-7b_llava_sparsegpt_pruner_0.5\
+    --tasks chartqa  \
+    --batch_size 1 \
+    --log_samples \
+    --log_samples_suffix chartqa \
+    --output_path ./logs/chartqa/sparsegpt/
+
+
+
+    

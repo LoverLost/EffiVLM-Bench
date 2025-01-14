@@ -22,8 +22,8 @@ with open(Path(__file__).parent / "mathvista.yaml", "r") as f:
 
 API_TYPE = os.getenv("API_TYPE", "openai")
 if API_TYPE == "openai":
-    API_URL = os.getenv("OPENAI_API_URL", "https://api.openai.com/v1/chat/completions")
-    API_KEY = os.getenv("OPENAI_API_KEY", "YOUR_API_KEY")
+    API_URL = os.getenv("OPENAI_API_URL", "https://api.openai-proxy.org/v1/chat/completions")
+    API_KEY = os.getenv("OPENAI_API_KEY", "sk-jGzkmsfwW3Cn798VcBmMMJQ9L2R6q2m7SMbl5AZRKJmWsrJF")
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",

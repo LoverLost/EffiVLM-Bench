@@ -185,6 +185,7 @@ class LayerSparsity:
             self, 
             model, 
             data_loader, 
+            pruner_name,
             loss_func, 
             num_samples, 
             original_sparsity, 
@@ -196,9 +197,11 @@ class LayerSparsity:
             prune_per_model=False,
             per_model_group=[],
         ):
+        
         self.importance_measure = {}
         self.model = model
         self.data_loader = data_loader
+        self.pruner_name = pruner_name
         self.loss_func = loss_func
         self.num_samples = num_samples
         self.original_sparsity = original_sparsity
@@ -369,18 +372,24 @@ class LayerSparsity:
         original_sparsity = self.original_sparsity
         layer_to_group_mapping = self.layer_to_group_mapping
         
+        
+        if self.pruner_name == "llava_wanda_pruner" or self.pruner_name == "llava_sparsegpt_pruner":
+            return {k: original_sparsity for k in layer_to_group_mapping}
+        
         if self.score_compute.startswith("Real"):
             return self.global_iterative_pruning(
                 original_sparsity, layer_to_group_mapping, iteratation=3, max_sparsity_per_layer=1.0
             )
-
+        
+        
+        
         if layer_to_group_mapping is None or len(layer_to_group_mapping) == 0:
             class uniform_sparsity_module:
                 def __getitem__(self, key):
                     return original_sparsity
             return uniform_sparsity_module()
 
-        # compute the global information
+
         if len(self.importance_measure) == 0:
             if self.score_compute.startswith("MEZO"):
                 self.importance_measure = self.compute_importance_scores_mezo(layer_to_group_mapping)

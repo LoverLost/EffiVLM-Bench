@@ -1142,11 +1142,12 @@ class RandomCluster():
         bsz, num_heads, seq_len, head_dim = origin_key_states.shape
         window_size = max(1, int(seq_len * self.budgets * 0.1))
         other_size = max(1, int(seq_len * self.budgets * 0.9))
-        
+
         select_from_len = seq_len - window_size
 
         # 为每个batch和每个head生成随机索引，并排序以保持相对位置
         indices = torch.stack([
+            torch.sort(torch.randperm(select_from_len, device=origin_key_states.device)[:other_size])[0]
             torch.sort(torch.randperm(select_from_len, device=origin_key_states.device)[:other_size])[0]
             for _ in range(bsz * num_heads)
         ]).view(bsz, num_heads, other_size)
@@ -1159,13 +1160,12 @@ class RandomCluster():
         
         # 扩展indices以匹配head_dim维度
         indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
-        
+
         # 使用gather收集选中的token
         selected_key_states = torch.gather(origin_key_states, dim=2, index=indices)
         selected_value_states = torch.gather(origin_value_states, dim=2, index=indices)
-        
-        return selected_key_states, selected_value_states
 
+        return selected_key_states, selected_value_states
 
 
 def init_StreamingLLM(self,

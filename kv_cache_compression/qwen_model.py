@@ -864,7 +864,7 @@ def qwen_attention_forward_LOOK_M(
     value_states = repeat_kv(value_states, self.num_key_value_groups)
 
     attn_weights = torch.matmul(
-        query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+        query_states.float(), key_states.transpose(2, 3).float()) / math.sqrt(self.head_dim)
     if attention_mask is not None:  # no matter the length, we just slice it
         causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
         attn_weights = attn_weights + causal_mask

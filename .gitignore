@@ -65,4 +65,5 @@ scripts/zk_scripts
 *.yaml
 *.out
 
+*.sh
 models/

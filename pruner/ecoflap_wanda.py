@@ -47,8 +47,8 @@ class LLavaLLMPruner(LayerWiseBasePruner):
     
 
     def __init__(self,
-                 sparsity_ratio=0.5,
-                 max_sparsity_per_layer=0.8,
+                 sparsity_ratio=0.2,
+                 max_sparsity_per_layer=0.5,
                  num_samples=4,
                  num_noise=1,
                  noise_eps=1e-3,
@@ -315,7 +315,7 @@ class LLavaLLMPruner(LayerWiseBasePruner):
                 W_mask = (torch.zeros_like(W_metric) == 1)
                 if self.prune_n != 0: 
                     # structured n:m sparsity pruning
-                    if self.pruner_name == "only n:m structured pruning":
+                    if self.pruner_name == "n:m structured pruning":
                         for ii in range(W_metric.shape[1]):
                             if ii % self.prune_m == 0:
                                 tmp = W_metric[:,ii:(ii+self.prune_m)].float()
@@ -323,6 +323,7 @@ class LLavaLLMPruner(LayerWiseBasePruner):
                 else:  # unstructured pruning
                     sort_res = torch.sort(W_metric, dim=-1, stable=True)
                     sparsity_key = f"{module_to_process}.{i}.{name}.weight"
+                    
                     indices = sort_res[1][:,:int(W_metric.shape[1] * sparsity_ratio.get(sparsity_key, self.max_sparsity_per_layer))]
                     W_mask.scatter_(1, indices, True)
                     
@@ -368,6 +369,7 @@ class LLavaLLMPruner(LayerWiseBasePruner):
         sparsity_module = LayerSparsity(
             self._model,
             self.data_loader,
+            self.pruner_name,
             loss_language,
             self.num_data_first_stage,
             original_sparsity,
@@ -388,9 +390,11 @@ class LLavaLLMPruner(LayerWiseBasePruner):
         if self.prune_spec is None:
             return self._model, None
 
-        _, keep_ratio, _, _ = self.convert_spec_to_list(self.prune_spec)
+        # _, keep_ratio, _, _ = self.convert_spec_to_list(self.prune_spec)
 
-        sparsity_ratio = 1 - keep_ratio[0]
+        # sparsity_ratio = 1 - keep_ratio[0]
+        
+        sparsity_ratio = self.sparsity_ratio
 
         sparsity_dict = self.get_sparsity(
             sparsity_ratio,
@@ -437,25 +441,105 @@ class LLavaLLMPruner(LayerWiseBasePruner):
             if n in requires_grad_record:
                 p.requires_grad = requires_grad_record[n]
 
+
+
+
+import argparse
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Prune LLaVA-based model.")
+
+    parser.add_argument(
+        "--pretrained_model_path", 
+        type=str, 
+        default="/share/home/mhma/models/llava-onevision-qwen2-7b-ov",
+        help="Path to the pretrained model."
+    )
+    parser.add_argument(
+        "--json_path", 
+        type=str, 
+        default="/share/home/mhma/MLLM-Efficiency/datasets/coco/caption.json",
+        help="Path to the dataset JSON."
+    )
+    parser.add_argument(
+        "--images_dir", 
+        type=str, 
+        default="/share/home/mhma/MLLM-Efficiency/datasets/coco/images",
+        help="Path to the images directory."
+    )
+    parser.add_argument(
+        "--result_folder", 
+        type=str, 
+        default="/share/home/mhma/MLLM-Efficiency/models/llava-onevision-qwen2-7b",
+        help="Folder to save pruned model."
+    )
+
+    parser.add_argument(
+        "--sparsity_ratio_granularity",
+        type=str,
+        default=None,
+        help="Pruning method granularity."
+    )
+    
+    parser.add_argument(
+        "--sparsity_ratio",
+        type=float,
+        default=0.5,
+        help="Global ratio of weights to be pruned."
+    )
+    parser.add_argument(
+        "--max_sparsity_per_layer",
+        type=float,
+        default=0.9,
+        help="Per-layer maximum pruning ratio."
+    )
+    parser.add_argument(
+        "--num_samples",
+        type=int,
+        default=1,
+        help="Number of calibration samples to use for pruning."
+    )
+    parser.add_argument(
+        "--num_data_first_stage",
+        type=int,
+        default=1,
+        help="Number of samples used in the first stage of sparsity computation."
+    )
+    parser.add_argument(
+        "--pruner_name",
+        default="llava_wanda_pruner",
+    )
+
+    args = parser.parse_args()
+    return args
+
+
 if __name__ == "__main__":
     
     
-    result_floader = "/share/home/mhma/MLLM-Efficiency/models/llava-onevision-qwen2-7b"
-    pretrained_model_path = "/share/home/mhma/models/llava-onevision-qwen2-7b-ov"
-    json_path = "/share/home/mhma/MLLM-Efficiency/datasets/coco/caption.json"
-    images_dir = "/share/home/mhma/MLLM-Efficiency/datasets/coco/images"
+    args = parse_args()
 
+    pretrained_model_path = args.pretrained_model_path
+    json_path = args.json_path
+    images_dir = args.images_dir
+    result_floader = args.result_folder
+    sparsity_ratio_granularity = args.sparsity_ratio_granularity
+    pruner_name = args.pruner_name
     llava_pruner = LLavaLLMPruner(
         pretrained=pretrained_model_path,
         json_path=json_path,
         images_dir=images_dir,
-        num_samples=128,
-        num_data_first_stage=128,
-        prune_spec=[("model.layers", 0.5)],
+        sparsity_ratio=args.sparsity_ratio,
+        max_sparsity_per_layer=args.max_sparsity_per_layer,
+        num_samples=args.num_samples,
+        num_data_first_stage=args.num_data_first_stage,
+        # sparsity_ratio_granularity = args.sparsity_ratio_granularity,
+        prune_spec=[("model.layers", 0.5)],  # not used @mhma 0112
         device="cuda:0",
-        attn_implementation="flash_attention_2",  
+        attn_implementation="flash_attention_2",
+        pruner_name=pruner_name,
     )
-    dir_path = result_floader+'_'+llava_pruner.pruner_name+'_'+str(llava_pruner.sparsity_ratio)
+    dir_path = f"{result_floader}_{llava_pruner.pruner_name}_{llava_pruner.sparsity_ratio}"
     pruned_model, sparsity_dict = llava_pruner.prune()
 
     pruned_model.save_pretrained(dir_path)
@@ -466,3 +550,6 @@ if __name__ == "__main__":
     print("Finished pruning.")
     sparsity = llava_pruner.check_sparsity(pruned_model)
     print(f"Global sparsity: {sparsity:.4f}")
+    
+    
+    
