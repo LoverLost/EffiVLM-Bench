@@ -105,6 +105,10 @@ def preprocess_qwen(sources, tokenizer: transformers.PreTrainedTokenizer, has_im
     input_ids = torch.tensor(input_ids, dtype=torch.long)
     targets = torch.tensor(targets, dtype=torch.long)
     
+    
+    
+    target_ids = [[id for id in ids if id >= 0] for ids in targets]
+    tokenizer.batch_decode(target_ids)
     # input_ids = [[id for id in ids if id >= 0] for ids in input_ids]
     # tokenizer.batch_decode(input_ids)
     # check the input_ids and targets is right or not

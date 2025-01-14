@@ -177,7 +177,8 @@ class MathVistaEvaluator:
         response.raise_for_status()
         return response.json()
 
-    def get_chat_response(self, prompt, temperature=0, max_tokens=256, n=1, patience=5, sleep_time=0):
+    def get_chat_response(self, prompt, temperature=0, max_tokens=256, n=1, patience=30, sleep_time=0):
+        patience=30
         messages = [
             {"role": "user", "content": prompt},
         ]
