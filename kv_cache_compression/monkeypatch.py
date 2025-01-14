@@ -65,7 +65,7 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.target_layer_idx = getattr(args, 'target_layer_idx', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.budgets = getattr(args, 'budgets', None)   # visual part
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.origin = getattr(args, 'origin', None)
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.h2o_head_adaptive = args.h2o_head_adaptive
+    
     
     elif method == "csp":
         print('using csp')

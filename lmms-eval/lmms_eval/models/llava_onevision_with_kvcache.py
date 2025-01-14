@@ -588,9 +588,13 @@ class Llava_OneVision_with_kvcache(lmms):
                 gen_kwargs.pop("image_aspect_ratio")
             try:
                 with torch.inference_mode():
-                    with torch.autocast(device_type="cuda", dtype=torch.bfloat16):
-                        cont = self.model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache,method=self.method,**gen_kwargs)
-                    # cont = self.model.generate(qwen_input_ids, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
+                    if image_tensor is not None:
+                        image_tensor = (
+                            [img.to(dtype=torch.bfloat16, device=self.device) for img in image_tensor]
+                            if isinstance(image_tensor, list)
+                            else image_tensor.to(dtype=torch.bfloat16, device=self.device)
+                        )
+                    cont = self.model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache,method=self.method,**gen_kwargs)
 
                 text_outputs = self.tokenizer.batch_decode(cont, skip_special_tokens=True)
             except Exception as e:

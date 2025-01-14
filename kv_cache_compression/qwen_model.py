@@ -1232,13 +1232,18 @@ def qwen_attention_forward_fastv(self,
     key_states = repeat_kv(key_states, self.num_key_value_groups)
     value_states = repeat_kv(value_states, self.num_key_value_groups)
 
-    attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+    attn_weights = torch.matmul(query_states.float(), key_states.transpose(2, 3).float()) / math.sqrt(self.head_dim)
     if attention_mask is not None:  # no matter the length, we just slice it
         causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
         attn_weights = attn_weights + causal_mask
 
     # upcast attention to fp32
-    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32)
+
+    if self.layer_idx == self.target_layer_idx - 1 and q_len > 1:   # prefill stage and the last layer before target layer
+        self.last_attention = attn_weights   # get the last attension
+
+    attn_weights = attn_weights.to(query_states.dtype)
     attn_weights = nn.functional.dropout(attn_weights, p=self.attention_dropout, training=self.training)
     attn_output = torch.matmul(attn_weights, value_states)
 
@@ -1253,8 +1258,6 @@ def qwen_attention_forward_fastv(self,
 
     attn_output = self.o_proj(attn_output)
 
-    if self.layer_idx == self.target_layer_idx - 1 and q_len > 1:   # prefill stage and the last layer before target layer
-        self.last_attention = attn_weights   # get the last attension
 
     if not output_attentions:
         attn_weights = None
