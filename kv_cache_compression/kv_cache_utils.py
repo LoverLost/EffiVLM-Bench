@@ -1167,6 +1167,7 @@ class RandomCluster():
         # 为每个batch和每个head生成随机索引，并排序以保持相对位置
         indices = torch.stack([
             torch.sort(torch.randperm(select_from_len, device=origin_key_states.device)[:other_size])[0]
+            torch.sort(torch.randperm(select_from_len, device=origin_key_states.device)[:other_size])[0]
             for _ in range(bsz * num_heads)
         ]).view(bsz, num_heads, other_size)
 

@@ -389,7 +389,7 @@ class LayerSparsity:
                     return original_sparsity
             return uniform_sparsity_module()
 
-        # compute the global information
+
         if len(self.importance_measure) == 0:
             if self.score_compute.startswith("MEZO"):
                 self.importance_measure = self.compute_importance_scores_mezo(layer_to_group_mapping)

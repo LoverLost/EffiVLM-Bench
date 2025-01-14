@@ -79,7 +79,6 @@ python3 -m accelerate.commands.launch \
     --mixed_precision=bf16 \
     --num_processes=2 \
     -m lmms_eval \
-<<<<<<< HEAD
     --model llava_onevision_with_kvcache  \
     --model_args pretrained=/share/home/mhma/MLLM-Efficiency/models/origin/llava-onevision-qwen2-7b_llava_sparsegpt_pruner_0.5\
     --tasks chartqa  \
@@ -103,21 +102,21 @@ python3 -m accelerate.commands.launch \
     --log_samples_suffix chartqa \
     --output_path ./logs/chartqa/qwen2vl/
 
-<<<<<<< HEAD
-<<<<<<< HEAD
-    
-=======
->>>>>>> 3b02ec3 (add qwen2vl and adapted text-based methods, such as h2o, streamingLLM, SnapKV, and PyramidKV, to Qwen2VL, while verifying the data type of attention (torch.fp32) and the correctness of position_id)
-=======
 
-
->>>>>>> ca07ceb (use flash-attn2 on qwen2vl)
-=======
-    --model qwen2_vl \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-2B-Instruct-AWQ \
-    --tasks textvqa_val  \
+python3 -m accelerate.commands.launch \
+    --main_process_port=28175 \
+    --mixed_precision=bf16 \
+    --num_processes=2 \
+    -m lmms_eval \
+    --model llava_onevision_with_kvcache  \
+    --model_args pretrained=/share/home/mhma/MLLM-Efficiency/models/origin/llava-onevision-qwen2-7b_llava_sparsegpt_pruner_0.5\
+    --tasks chartqa  \
     --batch_size 1 \
     --log_samples \
-    --log_samples_suffix textvqa_val \
-    --output_path ./logs/debug/
->>>>>>> 48d8ccb (add prune methods)
+    --log_samples_suffix chartqa \
+    --output_path ./logs/chartqa/sparsegpt/
+
+
+
+    
+>>>>>>> bc6ea5a (code for sparsegpt)
