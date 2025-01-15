@@ -1139,13 +1139,22 @@ class RandomCluster():
     
     def update_kv(self, origin_key_states, origin_value_states):
         bsz, num_heads, seq_len, head_dim = origin_key_states.shape
-        select_num = int(seq_len * self.budgets)
+        window_size = max(1, int(seq_len * self.budgets * 0.1))
+        other_size = max(1, int(seq_len * self.budgets * 0.9))
         
+        select_from_len = seq_len - window_size
+
         # 为每个batch和每个head生成随机索引，并排序以保持相对位置
         indices = torch.stack([
-            torch.sort(torch.randperm(seq_len, device=origin_key_states.device)[:select_num])[0]
+            torch.sort(torch.randperm(select_from_len, device=origin_key_states.device)[:other_size])[0]
             for _ in range(bsz * num_heads)
-        ]).view(bsz, num_heads, select_num)
+        ]).view(bsz, num_heads, other_size)
+
+        last_indices = torch.arange(seq_len - window_size, seq_len, 
+                              device=origin_key_states.device)
+        last_indices = last_indices.unsqueeze(0).unsqueeze(0).expand(bsz, num_heads, -1)
+
+        indices = torch.cat([indices, last_indices], dim=2)
         
         # 扩展indices以匹配head_dim维度
         indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
