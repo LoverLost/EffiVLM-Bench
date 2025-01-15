@@ -47,6 +47,9 @@ def siglip_attention_forward( self,
         output_attentions: Optional[bool] = False,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
 
+    if self.layer_idx == 24:    # change here
+        self.attn_weights = None
+
     batch_size, q_len, _ = hidden_states.size()
 
     query_states = self.q_proj(hidden_states)
@@ -55,11 +58,11 @@ def siglip_attention_forward( self,
 
     query_states = query_states.view(batch_size, q_len, self.num_heads, self.head_dim).transpose(1, 2)
     key_states = key_states.view(batch_size, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-    raw_key_states = key_states.clone()
+    raw_key_states = key_states.float().clone()              # change
     value_states = value_states.view(batch_size, q_len, self.num_heads, self.head_dim).transpose(1, 2)
 
     k_v_seq_len = key_states.shape[-2]
-    attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) * self.scale
+    attn_weights = torch.matmul(query_states.float(), key_states.transpose(2, 3).float()) * self.scale   # change
 
     if attn_weights.size() != (batch_size, self.num_heads, q_len, k_v_seq_len):
         raise ValueError(f"Attention weights should be of size {(batch_size, self.num_heads, q_len, k_v_seq_len)}, but is" f" {attn_weights.size()}")
@@ -70,7 +73,12 @@ def siglip_attention_forward( self,
         attn_weights = attn_weights + attention_mask
 
     # upcast attention to fp32
-    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+    attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32)
+
+    if self.layer_idx == 24:               # FIXME   change here. 
+        self.attn_weights = attn_weights
+    
+    attn_weights = attn_weights.to(query_states.dtype)       # change
     attn_weights = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
     attn_output = torch.matmul(attn_weights, value_states)
 
@@ -103,6 +111,7 @@ def siglip_EncoderLayer_forward(self,
         residual = hidden_states
         if self.layer_idx == 24:
             self.metric = None
+            self.hidden_states = None
 
         hidden_states = self.layer_norm1(hidden_states)
         hidden_states, attn_weights, metric = self.self_attn(
@@ -124,6 +133,7 @@ def siglip_EncoderLayer_forward(self,
 
         if self.layer_idx == 24:   # 倒数第二层
             self.metric = metric
+            self.hidden_states = hidden_states              # change
 
         return outputs
 
@@ -137,9 +147,11 @@ def siglip_vision_tower_forward(self, images):
         # image_features = image_forward_outs.hidden_states[-1].to(images.dtype)
         # assert image_features.shape[-2] == 729
 
-        image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True, output_attentions=True)
-        attn_weights  = image_forward_outs.attentions[-2]
-        hidden_states = image_forward_outs.hidden_states[-2]
+        image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=False, output_attentions=False)
+        # attn_weights  = image_forward_outs.attentions[-2]
+        attn_weights = self.vision_tower.vision_model.encoder.layers[-2].self_attn.attn_weights     # change
+        # hidden_states = image_forward_outs.hidden_states[-2]
+        hidden_states = self.vision_tower.vision_model.encoder.layers[-2].hidden_states
         metric = self.vision_tower.vision_model.encoder.layers[-2].metric   # [3, 729, 72]
         per_patch_token_num = metric.shape[1]
         dominant_num =  max(1, int(self.budgets * per_patch_token_num * 5.4 / 6.4))
@@ -167,12 +179,12 @@ def siglip_vision_tower_forward(self, images):
         target_tokens = metric_normalized[:, target_indices, :]  # [3, 10, 72]
 
         tokens_to_merge = metric_normalized[:, ~torch.isin(torch.arange(metric_normalized.shape[1], device=metric_normalized.device), target_indices), :]   # [3, 665, 72]
-        similarity = torch.bmm(tokens_to_merge, target_tokens.transpose(1, 2))   # [3, 665, 10]
+        similarity = torch.bmm(tokens_to_merge.float(), target_tokens.transpose(1, 2).float())   # [3, 665, 10]    FIXME  change here
         assign_one_hot = torch.zeros(tokens_to_merge.shape[0], tokens_to_merge.shape[1], contextual_num, dtype=hidden_states_filtered.dtype, device=metric_normalized.device)
         assign_one_hot.scatter_(2, similarity.argmax(dim=2).unsqueeze(-1), 1)
         counts = assign_one_hot.sum(dim=1).clamp(min=1).unsqueeze(-1)       # 计算每个聚类中心分配到的token的数量
         hidden_to_merge = hidden_states_filtered[:, ~torch.isin(torch.arange(hidden_states_filtered.shape[1], device=hidden_states_filtered.device), target_indices), :]
-        aggregated_hidden = torch.bmm(assign_one_hot.transpose(1, 2), hidden_to_merge) / counts  # [3, 10, 1152]
+        aggregated_hidden = (torch.bmm(assign_one_hot.transpose(1, 2).float(), hidden_to_merge.float()) / counts).to(torch.bfloat16) # [3, 10, 1152]   FIXME  change here
         target_hidden = hidden_states_filtered[:, target_indices, :]  # [3, 10, 1152]
         
         contextual_tokens = target_hidden + aggregated_hidden

@@ -190,7 +190,7 @@ class SigLipAttention(nn.Module):
     """Multi-headed attention from 'Attention Is All You Need' paper"""
 
     # Copied from transformers.models.clip.modeling_clip.CLIPAttention.__init__
-    def __init__(self, config):
+    def __init__(self, config, layer_idx):
         super().__init__()
         self.config = config
         self.embed_dim = config.hidden_size
@@ -205,6 +205,7 @@ class SigLipAttention(nn.Module):
         self.v_proj = nn.Linear(self.embed_dim, self.embed_dim)
         self.q_proj = nn.Linear(self.embed_dim, self.embed_dim)
         self.out_proj = nn.Linear(self.embed_dim, self.embed_dim)
+        self.layer_idx = layer_idx
 
     def forward(
         self,
@@ -272,7 +273,7 @@ class SigLipEncoderLayer(nn.Module):
     def __init__(self, config: SigLipVisionConfig, layer_idx:int):
         super().__init__()
         self.embed_dim = config.hidden_size
-        self.self_attn = SigLipAttention(config)
+        self.self_attn = SigLipAttention(config, layer_idx)
         self.layer_norm1 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
         self.mlp = SigLipMLP(config)
         self.layer_norm2 = nn.LayerNorm(self.embed_dim, eps=config.layer_norm_eps)
