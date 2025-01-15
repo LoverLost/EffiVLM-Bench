@@ -461,8 +461,8 @@ def qwen_attention_forward_vlcache(
     value_states = repeat_kv(value_states, self.num_key_value_groups)
 
     attn_weights = torch.matmul(
-        query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
-
+        query_states.float(), key_states.transpose(2, 3).float()) / math.sqrt(self.head_dim)
+    
     # check attn_weights size
     if attn_weights.size() != (bsz, self.num_heads, q_len, key_states.shape[-2]):
         raise ValueError(
@@ -476,9 +476,7 @@ def qwen_attention_forward_vlcache(
 
     # upcast attention to fp32
     attn_weights = nn.functional.softmax(
-        attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
-    attn_weights = nn.functional.dropout(
-        attn_weights, p=self.attention_dropout, training=self.training)
+        attn_weights, dim=-1, dtype=torch.float32)
 
     # get sparsity_layer and attn_weights_importance form attn_weights
     if q_len > 1:
@@ -492,6 +490,9 @@ def qwen_attention_forward_vlcache(
         self.kv_cluster.attn_weights_importance_tuple += (
             attn_weights_importance_tuple,)
 
+    attn_weights = attn_weights.to(query_states.dtype)
+    attn_weights = nn.functional.dropout(
+        attn_weights, p=self.attention_dropout, training=self.training)
     attn_output = torch.matmul(attn_weights, value_states)
 
     if attn_output.size() != (bsz, self.num_heads, q_len, self.head_dim):
@@ -635,7 +636,7 @@ def qwen_model_forward_vlcache(
     if self.layers[0].self_attn.kv_cluster.isprefill:
         # get buget_layers and sorted_attn_kv_indices
         buget_layers, sorted_attn_kv_indices = self.layers[0].self_attn.kv_cluster.get_budget_layer_and_sorted_attn_kv_indices(
-            all_sparsity_layers, all_attn_weights_importance, len(self.layers))
+            all_sparsity_layers, all_attn_weights_importance, len(self.layers), past_key_values)
 
         for decoder_layer in self.layers:
             # chage past_key_value using allocate_budget
@@ -1422,7 +1423,7 @@ def qwen_attention_forward_CSP(
     if q_len > 1:
         key_states = repeat_kv(key_states, self.num_key_value_groups)
         value_states = repeat_kv(value_states, self.num_key_value_groups)
-        attn_weights = torch.matmul(query_states, key_states.transpose(2, 3)) / math.sqrt(self.head_dim)
+        attn_weights = torch.matmul(query_states.float(), key_states.transpose(2, 3).float()) / math.sqrt(self.head_dim)
 
         if attention_mask is not None:
             causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]

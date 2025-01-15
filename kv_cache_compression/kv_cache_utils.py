@@ -345,8 +345,8 @@ class VlCacheKVCluster():
             # same window size for each layer , 10% budget for each layer
             kv_cache_window_num = past_key_value[layer_idx][0].shape[-2] * \
                 self.vlcache_alpha_sparsity * 0.1
-        kv_cache_image_num_int = max(1, int(torch.ceil(kv_cache_image_num).item()))
-        kv_cache_window_num_int = max(1, math.ceil(kv_cache_window_num))
+        kv_cache_image_num_int = max(1, int(kv_cache_image_num.item()))
+        kv_cache_window_num_int = max(1, int(kv_cache_window_num))
         # choose window
         sorted_attn_kv_select_window = torch.arange(
             past_key_value[layer_idx][0].shape[-2] - kv_cache_window_num_int,
@@ -423,11 +423,13 @@ class VlCacheKVCluster():
         vlcache_sparsity_layer_tuple: Tuple[torch.Tensor],
         vlcache_attn_weights_importance_tuple: Tuple[torch.Tensor],
         layers: int,
+        past_key_value: Cache,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         '''
         Called in the forward function of Qwen2Model, after the prefill phase ends, the sparsity of each layer is aggregated 
         to reallocate according to the budget, and the token importance is calculated
         '''
+        _, num_k_heads, _, _ = past_key_value.key_cache[0].shape
         sparsity_tensor = torch.stack(
             [layer_sparsity[0] for layer_sparsity in vlcache_sparsity_layer_tuple])
         non_sparsity_sum = (1 - sparsity_tensor).sum()
@@ -465,6 +467,8 @@ class VlCacheKVCluster():
             sorted_attn_kv, sorted_indices = torch.sort(
                 attn_weights_importance_sum_layer, dim=-1, descending=True)
         else:
+            layers, bsz, num_heads, _ = stacked_attn_weights_importance.shape
+            stacked_attn_weights_importance = stacked_attn_weights_importance.view(layers, bsz, num_k_heads, num_heads//num_k_heads,-1).sum(dim=3)
             sorted_attn_kv, sorted_indices = torch.sort(
                 stacked_attn_weights_importance, dim=-1, descending=True)
         return buget_layers, sorted_indices
@@ -992,12 +996,12 @@ class CSPCluster():
         
         if attn_score_cache.shape[-2]>1:
             if self.hh_ratio is not None and self.recent_ratio is not None and self.budget is None:
-                self.hh_size = math.ceil(attn_score_cache.shape[-1] * self.hh_ratio)
-                self.recent_size = math.ceil(attn_score_cache.shape[-1] * self.recent_ratio)
+                self.hh_size = max(1, int(attn_score_cache.shape[-1] * self.hh_ratio))
+                self.recent_size = max(1, int(attn_score_cache.shape[-1] * self.recent_ratio))
                 self.cache_size = self.hh_size + self.recent_size
             elif self.budget is not None:
-                self.hh_size = math.ceil(attn_score_cache.shape[-1] * self.budget * 0.9)
-                self.recent_size = math.ceil(attn_score_cache.shape[-1] * self.budget * 0.1)
+                self.hh_size = max(1, int(attn_score_cache.shape[-1] * self.budget * 0.9))
+                self.recent_size = max(1, int(attn_score_cache.shape[-1] * self.budget * 0.1))
                 self.cache_size = self.hh_size + self.recent_size
             else:
                 raise ValueError('The CSP method requires setting hh_ratio and recent_ratio at the same time or you can set budget separately.')
@@ -1024,7 +1028,7 @@ class CSPCluster():
 
                 q_observe_recent = self.recent_size
                 if self.kv_recent_bias != 1:
-                    kv_recent_size = math.ceil(self.recent_size * self.kv_recent_bias)
+                    kv_recent_size = max(1, int(self.recent_size * self.kv_recent_bias))
                 else:
                     kv_recent_size = self.recent_size
                 k = self.cache_size - kv_recent_size # k: 309 self.cache_size: 618 self.recent_size: 309
@@ -1046,8 +1050,8 @@ class CSPCluster():
                 attn_weights_self = attn_weights_past * self_attn_mask  # self-attn 区域
                 attn_weights_cross = attn_weights_past * cross_attn_mask  # cross-attn 区域
                 
-                k_cross = math.ceil(k * self.cross_ratio)
-                k_self = math.ceil(k * (1-self.cross_ratio))
+                k_cross = max(1, int(k * self.cross_ratio))
+                k_self = max(1, int(k * (1-self.cross_ratio)))
                 if self.cross_ratio <= 0:
                     k_cross, k_self = 1, 308
 
