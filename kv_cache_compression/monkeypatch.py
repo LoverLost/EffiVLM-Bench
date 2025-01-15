@@ -118,6 +118,15 @@ def replace_qwen(args, method):
         LlavaMetaForCausalLM.encode_images_prumerge_plus_simple = encode_images_prumerge_plus_simple
         LlavaQwenForCausalLM.prepare_inputs_labels_for_multimodal = prepare_inputs_labels_for_multimodal_prumerge_plus
 
+
+    elif method == 'sparsevlm':
+        print('using sparsevlm')
+        from llava.model.language_model.llava_qwen import LlavaQwenForCausalLM
+        from llava.model.language_model.sparse_llava_qwen import LlavaQwenSparseForCausalLM
+        from llava.model.language_model.sparse_modeling_qwen import Qwen2SparseModel
+        LlavaQwenSparseForCausalLM.bias = 0
+        LlavaQwenSparseForCausalLM.scale = 13.5
+        Qwen2SparseModel.ratio = getattr(args, 'r', None)
         
         
 def replace_mistral(method):
