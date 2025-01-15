@@ -72,3 +72,5 @@ test.sh
 *.out
 *.sh
 models/
+
+pruner/
