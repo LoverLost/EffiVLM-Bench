@@ -143,13 +143,17 @@ class Llava_OneVision_with_kvcache(lmms):
         cfg_pretrained = AutoConfig.from_pretrained(self.pretrained)
 
         llava_model_args["overwrite_config"] = overwrite_config
+        if method == 'sparsevlm':
+            use_sparse = True
+        else:
+            use_sparse = False
         try:
             # Try to load the model with the multimodal argument
-            self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, **llava_model_args)
+            self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, use_sparse=use_sparse, **llava_model_args)
         except TypeError:
             # for older versions of LLaVA that don't have multimodal argument
             llava_model_args.pop("multimodal", None)
-            self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, **llava_model_args)
+            self._tokenizer, self._model, self._image_processor, self._max_length = load_pretrained_model(pretrained, None, model_name, device_map=self.device_map, use_sparse=use_sparse, **llava_model_args)
 
 
         self.method = method

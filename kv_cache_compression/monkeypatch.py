@@ -106,6 +106,15 @@ def replace_qwen(args, method):
         print('using random')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = getattr(args, 'budgets', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_random
+
+    elif method == 'sparsevlm':
+        print('using sparsevlm')
+        from llava.model.language_model.llava_qwen import LlavaQwenForCausalLM
+        from llava.model.language_model.sparse_llava_qwen import LlavaQwenSparseForCausalLM
+        from llava.model.language_model.sparse_modeling_qwen import Qwen2SparseModel
+        LlavaQwenSparseForCausalLM.bias = 0
+        LlavaQwenSparseForCausalLM.scale = 13.5
+        Qwen2SparseModel.ratio = getattr(args, 'r', None)
         
         
 def replace_mistral(method):
