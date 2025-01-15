@@ -26,6 +26,47 @@ python3 -m accelerate.commands.launch \
     --output_path ./logs/chatqa/snapkv/
 
 
+python3 -m accelerate.commands.launch \
+    --main_process_port=28175 \
+    --mixed_precision=bf16 \
+    --num_processes=4 \
+    -m lmms_eval \
+    --model llava_onevision_with_kvcache \
+    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=h2o,budgets=0.01 \
+    --tasks docvqa_test  \
+    --batch_size 1 \
+    --log_samples \
+    --log_samples_suffix chartqa \
+    --output_path ./logs/docvqa_test/h2o/
+
+python3 -m accelerate.commands.launch \
+    --main_process_port=28175 \
+    --mixed_precision=bf16 \
+    --num_processes=4 \
+    -m lmms_eval \
+    --model llava_onevision_with_kvcache \
+    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=h2o,budgets=0.05 \
+    --tasks docvqa_test  \
+    --batch_size 1 \
+    --log_samples \
+    --log_samples_suffix chartqa \
+    --output_path ./logs/docvqa_test/h2o/
+
+
+python3 -m accelerate.commands.launch \
+    --main_process_port=28175 \
+    --mixed_precision=bf16 \
+    --num_processes=2 \
+    -m lmms_eval \
+    --model llava_onevision_with_kvcache \
+    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=snapkv,budgets=0.01,snapkv_head_adaptive=false,pooling=avgpool \
+    --tasks chartqa  \
+    --batch_size 1 \
+    --log_samples \
+    --log_samples_suffix chartqa \
+    --output_path ./logs/chatqa/snapkv/
+
+
 ## example for sparsegpt-llava-onevision
 python3 -m accelerate.commands.launch \
     --main_process_port=28175 \
