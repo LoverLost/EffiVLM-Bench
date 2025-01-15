@@ -65,3 +65,5 @@ scripts/zk_scripts
 *.yaml
 *.sh
 models/
+
+pruner/
