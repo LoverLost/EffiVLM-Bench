@@ -271,8 +271,8 @@ class H2OKVCluster():
         if q_len < self.max_capacity_prompt:
             return key_states, value_states
         key_states_repeat = repeat_kv(key_states, num_key_value_groups)
-        attn_weights = torch.matmul(
-            query_states, key_states_repeat.transpose(-2, -1)) / math.sqrt(head_dim)
+        attn_weights = torch.matmul( 
+            query_states.float(), key_states_repeat.transpose(-2, -1).float()) / math.sqrt(head_dim)   # float32
 
         # implementation of kv-factory
         # dtype_min = torch.finfo(attn_weights.dtype).min
@@ -284,7 +284,7 @@ class H2OKVCluster():
 
         attn_weights += attention_mask
         attn_weights = nn.functional.softmax(
-            attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+            attn_weights, dim=-1, dtype=torch.float32)
         attn_weights = attn_weights.view(
             bsz, num_heads // num_key_value_groups, num_key_value_groups, q_len, -1)
 
@@ -732,7 +732,7 @@ class SnapKVCluster():
             return key_states, value_states
         else:
             attn_weights = torch.matmul(
-                query_states[..., -self.window_size:, :], key_states_repeat.transpose(2, 3)) / math.sqrt(head_dim)
+                query_states[..., -self.window_size:, :].float(), key_states_repeat.transpose(2, 3).float()) / math.sqrt(head_dim)   # float32
             mask = torch.full((self.window_size, self.window_size), torch.finfo(
                 attn_weights.dtype).min, device=attn_weights.device)
             mask_cond = torch.arange(mask.size(-1), device=attn_weights.device)
@@ -745,7 +745,7 @@ class SnapKVCluster():
                          self.window_size:] += attention_mask
 
             attn_weights = nn.functional.softmax(
-                attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+                attn_weights, dim=-1, dtype=torch.float32)
             # bsz, num_heads, window_size, seq_len
 
             attn_weights = attn_weights.view(
@@ -858,7 +858,7 @@ class pyramidkvCluster():
         elif q_len < (self.max_capacity_prompt - self.window_size) * 2:
 
             attn_weights = torch.matmul(
-                query_states[..., -self.window_size:, :], key_states_repeat.transpose(2, 3)) / math.sqrt(head_dim)
+                query_states[..., -self.window_size:, :].float(), key_states_repeat.transpose(2, 3).float()) / math.sqrt(head_dim)   # float32
 
             mask = torch.full((self.window_size, self.window_size), torch.finfo(
                 attn_weights.dtype).min, device=attn_weights.device)
@@ -872,7 +872,7 @@ class pyramidkvCluster():
                          self.window_size:] += attention_mask
 
             attn_weights = nn.functional.softmax(
-                attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+                attn_weights, dim=-1, dtype=torch.float32)
             attn_weights = attn_weights.view(
                 bsz, num_heads // num_key_value_groups, num_key_value_groups, -1, key_states.shape[-2])
             if self.head_adaptive:
@@ -911,7 +911,7 @@ class pyramidkvCluster():
             return key_states, value_states
         else:
             attn_weights = torch.matmul(
-                query_states[..., -self.window_size:, :], key_states_repeat.transpose(2, 3)) / math.sqrt(head_dim)
+                query_states[..., -self.window_size:, :].float(), key_states_repeat.transpose(2, 3).float()) / math.sqrt(head_dim)   # float32
             mask = torch.full((self.window_size, self.window_size), torch.finfo(
                 attn_weights.dtype).min, device=attn_weights.device)
             mask_cond = torch.arange(mask.size(-1), device=attn_weights.device)
@@ -923,7 +923,7 @@ class pyramidkvCluster():
             attn_weights[:, :, -self.window_size:, -
                          self.window_size:] += attention_mask
             attn_weights = nn.functional.softmax(
-                attn_weights, dim=-1, dtype=torch.float32).to(query_states.dtype)
+                attn_weights, dim=-1, dtype=torch.float32)
             attn_weights = attn_weights.view(
                 bsz, num_heads // num_key_value_groups, num_key_value_groups, -1, key_states.shape[-2])
             if self.head_adaptive:
