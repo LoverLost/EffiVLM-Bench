@@ -163,7 +163,7 @@ class MathVistaEvaluator:
             "Content-Type": "application/json",
         }
 
-    def __init__(self, api_key, gpt_model="gpt-3.5-turbo", quick_extract=False):
+    def __init__(self, api_key, gpt_model="gpt-4o-mini", quick_extract=False):
         self.api_key = api_key
         self.gpt_model = gpt_model
         self.quick_extract = quick_extract

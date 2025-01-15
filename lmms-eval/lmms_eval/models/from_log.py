@@ -26,6 +26,10 @@ class FromLog(lmms):
         super().__init__()
 
         self.logs = {}
+        # read group task config
+        self.task_config_key = kwargs["task"]
+        self.task_list = []
+        self.cur_task = ""
 
         log_folders = logs.split(",")
 
@@ -40,8 +44,8 @@ class FromLog(lmms):
                     if _model_arg not in _model_args["model_args"]:
                         return False
 
-            if not have_limits and _model_args["limit"] is not None:
-                return False
+            # if not have_limits and _model_args["limit"] is not None:
+                # return False
 
             return True
 
@@ -56,33 +60,60 @@ class FromLog(lmms):
                                 log_data = json.load(f)
 
                             # check if model is matched
-                            _model_args = log_data["args"]
+                            _model_args = log_data["config"]
+
+                            # read group task config
+                            if self.task_config_key in log_data["group_subtasks"]:
+                                assert type(log_data["group_subtasks"][self.task_config_key]) == list, "group_subtasks must be a list"
+                                if len(log_data["group_subtasks"][self.task_config_key]) == 0:
+                                    self.task_list.append(self.task_config_key)
+                                else:
+                                    self.task_list.extend(log_data["group_subtasks"][self.task_config_key])
+                            else:
+                                raise Exception(f"{self.task_config_key} Task config not found , your model_args is wrong!")
+                            
                             if not matched_model(_model_args):
                                 raise Exception("Model not matched")
-
-                            # load logs
-                            logs = {}
-                            for data in log_data["logs"]:
-                                id = data["doc_id"]
-                                response = data["resps"][0]
-                                logs[id] = response
-
-                            task = log_data["model_configs"]["task"]
-
-                            pattern = re.compile(r"\d{4}_\d{4}")
-
-                            if "time" in log_data:
-                                log_time = log_data["time"]
-                            elif pattern.search(os.path.abspath(log_file)):
-                                log_time = pattern.findall(os.path.abspath(log_file))[-1]
-                            else:
-                                log_time = "unknown"
-
-                            if task not in self.logs or (self.logs[task]["time"] == "unknown" or datetime.strptime(log_time, "%m%d_%H%M") > datetime.strptime(self.logs[task]["time"], "%m%d_%H%M")):
-                                self.logs[task] = {"time": log_time, "logs": logs}
-
                         except Exception as e:
-                            pass
+                            eval_logger.error(f"Error processing log file {log_file}: {e}")
+
+        for log_folder in log_folders:
+            for root, dirs, files in os.walk(log_folder):
+                for file in files:          
+                    if file.endswith(".jsonl"):
+                        try:
+                            self.cur_task = ""
+                            for task in self.task_list:
+                                if task in file:
+                                    self.cur_task = task
+                            
+                            if self.cur_task == "":
+                                # skip this file
+                                continue
+                                
+                            log_data_file = os.path.join(root, file)
+                            logs_data = {}
+                            with open(log_data_file, "r", encoding="utf-8") as f:
+                                for line in f:
+                                    log_data = json.loads(line)
+
+                                    id = log_data["doc_id"]
+                                    response = log_data["resps"][0]
+                                    logs_data[id] = response
+
+                                pattern = re.compile(r"\d{4}_\d{4}")
+
+                                if "time" in log_data:
+                                    log_time = log_data["time"]
+                                elif pattern.search(os.path.abspath(log_file)):
+                                    log_time = pattern.findall(os.path.abspath(log_file))[-1]
+                                else:
+                                    log_time = "unknown"
+
+                                if self.cur_task not in self.logs or (self.logs[self.cur_task]["time"] == "unknown" or datetime.strptime(log_time, "%m%d_%H%M") > datetime.strptime(self.logs[self.cur_task]["time"], "%m%d_%H%M")):
+                                    self.logs[self.cur_task] = {"time": log_time, "logs": logs_data}
+                        except Exception as e:
+                            eval_logger.error(f"Error processing log file {log_data_file}: {e}")
 
         accelerator = Accelerator()
         if accelerator.num_processes > 1:
@@ -107,7 +138,6 @@ class FromLog(lmms):
             response = self.logs[task]["logs"][doc_id]
             res.append(response[0])
             pbar.update(1)
-
         pbar.close()
         return res
 
