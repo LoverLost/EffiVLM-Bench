@@ -67,3 +67,5 @@ scripts/zk_scripts
 
 *.sh
 models/
+
+pruner/
