@@ -11,18 +11,16 @@ datasets/*
 *.err
 *.out
 logs/
-# *.json
-# *.jsonl
+*.json
+*.jsonl
 
-# Data
-!**/alpaca-data-conversation.json
-# Editor
 .idea
 *.swp
 .vscode
 *.png
 *.jpg
-# Other
+
+
 .DS_Store
 wandb
 output
@@ -56,14 +54,15 @@ HIP
 playground/.nfs028b0000017bff2c00000012
 
 # demo/
-1.sh
 test_case/
 result/
 scripts/hf_download.sh
 scripts/zk_scripts
+scripts/*
 /data
 *.yaml
-*.sh
 models/
 
-pruner/
+sparsegpt.sh
+test_clash.sh
+test.sh

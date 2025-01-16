@@ -32,6 +32,11 @@ from flash_attn import flash_attn_func, flash_attn_varlen_func
 from flash_attn.bert_padding import index_first_axis, pad_input, unpad_input
 from .cache_utils import streamingLLMCache
 
+from qwen2vl.modeling_qwen2_vl import (
+    Qwen2VLAttention,
+    apply_multimodal_rotary_pos_emb
+)
+
 logger = logging.get_logger(__name__)
 
 QWEN2_INPUTS_DOCSTRING = r"""
@@ -207,7 +212,12 @@ def qwen_attention_forward_streamingLLM(
 
     kv_seq_len = key_states.shape[-2]
     cos, sin = position_embeddings
-    query_states, key_states = apply_rotary_pos_emb(
+    if isinstance(self,Qwen2VLAttention):
+        query_states, key_states = apply_multimodal_rotary_pos_emb(
+            query_states, key_states, cos, sin, self.rope_scaling["mrope_section"]
+        )
+    else:
+        query_states, key_states = apply_rotary_pos_emb(
         query_states, key_states, cos, sin)
     if past_key_value is not None:
         if self.layer_idx is None:
@@ -310,7 +320,12 @@ def qwen_attention_forward_H2O(
 
     kv_seq_len = key_states.shape[-2]
     cos, sin = position_embeddings
-    query_states, key_states = apply_rotary_pos_emb(
+    if isinstance(self,Qwen2VLAttention):
+        query_states, key_states = apply_multimodal_rotary_pos_emb(
+            query_states, key_states, cos, sin, self.rope_scaling["mrope_section"]
+        )
+    else:
+        query_states, key_states = apply_rotary_pos_emb(
         query_states, key_states, cos, sin)
     if past_key_value is not None:
         if self.layer_idx is None:
@@ -418,7 +433,12 @@ def qwen_attention_forward_vlcache(
         hidden_shape).transpose(1, 2)
 
     cos, sin = position_embeddings
-    query_states, key_states = apply_rotary_pos_emb(
+    if isinstance(self,Qwen2VLAttention):
+        query_states, key_states = apply_multimodal_rotary_pos_emb(
+            query_states, key_states, cos, sin, self.rope_scaling["mrope_section"]
+        )
+    else:
+        query_states, key_states = apply_rotary_pos_emb(
         query_states, key_states, cos, sin)
 
     kv_seq_len = key_states.shape[-2]
@@ -831,7 +851,12 @@ def qwen_attention_forward_LOOK_M(
 
     kv_seq_len = key_states.shape[-2]
     cos, sin = position_embeddings
-    query_states, key_states = apply_rotary_pos_emb(
+    if isinstance(self,Qwen2VLAttention):
+        query_states, key_states = apply_multimodal_rotary_pos_emb(
+            query_states, key_states, cos, sin, self.rope_scaling["mrope_section"]
+        )
+    else:
+        query_states, key_states = apply_rotary_pos_emb(
         query_states, key_states, cos, sin)
     if past_key_value is not None:
         if self.layer_idx is None:
@@ -957,7 +982,12 @@ def qwen_attention_forward_snapkv(
 
     kv_seq_len = key_states.shape[-2]
     cos, sin = position_embeddings
-    query_states, key_states = apply_rotary_pos_emb(
+    if isinstance(self,Qwen2VLAttention):
+        query_states, key_states = apply_multimodal_rotary_pos_emb(
+            query_states, key_states, cos, sin, self.rope_scaling["mrope_section"]
+        )
+    else:
+        query_states, key_states = apply_rotary_pos_emb(
         query_states, key_states, cos, sin)
     if past_key_value is not None:
         if self.layer_idx is None:
@@ -1500,7 +1530,12 @@ def qwen_attention_forward_random(
 
     kv_seq_len = key_states.shape[-2]
     cos, sin = position_embeddings
-    query_states, key_states = apply_rotary_pos_emb(
+    if isinstance(self,Qwen2VLAttention):
+        query_states, key_states = apply_multimodal_rotary_pos_emb(
+            query_states, key_states, cos, sin, self.rope_scaling["mrope_section"]
+        )
+    else:
+        query_states, key_states = apply_rotary_pos_emb(
         query_states, key_states, cos, sin)
     if past_key_value is not None:
         if self.layer_idx is None:
