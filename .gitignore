@@ -73,4 +73,6 @@ test.sh
 *.sh
 models/
 
-pruner/
+sparsegpt.sh
+test_clash.sh
+test.sh
