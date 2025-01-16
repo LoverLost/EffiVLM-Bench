@@ -4,12 +4,12 @@ import argparse
 from awq import AutoAWQForCausalLM
 from transformers import AutoTokenizer
 from awq.models.auto import AWQ_CAUSAL_LM_MODEL_MAP
-from llava_onevison_for_awq import llava_onevision
+from quant.llava_onevison_for_awq import llava_onevision
 
 from pruner.build_dataset import LocalLlavaDataset, llava_collate_fn
 from torch.utils.data import DataLoader
 
-from llava_onevison_for_awq import LLavaOVAwqQuantizer
+from quant.llava_onevison_for_awq import LLavaOVAwqQuantizer
 # replace registered map
 AWQ_CAUSAL_LM_MODEL_MAP["llava"] = llava_onevision
 
@@ -38,7 +38,7 @@ def parse_args():
                         help='Path to images directory')
     parser.add_argument('--device',
                     type=str,
-                    default='cuda',
+                    default='cuda:0',
                     help='Device to run calibration on')
     # for quantization
 
@@ -135,7 +135,7 @@ if __name__ == '__main__':
         dataset,
         batch_size=1,
         shuffle=True,
-        collate_fn=lambda x: llava_collate_fn(x, image_processor, model.model, tokenizer, device=args.device),
+        collate_fn=lambda x: llava_collate_fn(x, image_processor, model.model, tokenizer, device='cpu'),
     )
     
 
@@ -144,7 +144,7 @@ if __name__ == '__main__':
     
     
     
-    calibrated_data = list(islice(data_loader, 2))
+    calibrated_data = list(islice(data_loader, calibrated_size))
 
     # for quicklly debug and will removed in the future
     

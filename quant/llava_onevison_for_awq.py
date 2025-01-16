@@ -297,8 +297,8 @@ class LLavaOVAwqQuantizer(AwqQuantizer):
 
         inps = []
         layer_kwargs =[]
-
-        best_device = get_best_device()
+        best_device = next(modules[0].parameters()).device
+        # best_device = get_best_device()
         modules[0] = modules[0].to(best_device)
         self.awq_model.move_embed(self.model, best_device)
 
@@ -368,6 +368,13 @@ class LLavaOVAwqQuantizer(AwqQuantizer):
                 self.modules[i] = self.modules[i].to(best_device)
                 common_device = next(self.modules[i].parameters()).device
 
+            # if self.module_kwargs[0].get("position_ids") is not None:
+            #     self.module_kwargs = [_["position_ids"].to(common_device) for  _ in self.module_kwargs]
+
+            # if self.module_kwargs[0].get("attention_mask") is not None:
+            #     self.module_kwargs = [_["attention_mask"].to(common_device) for  _ in self.module_kwargs]
+
+            # self.inps = [inp.to(common_device) for inp in self.inps]
             
             self.awq_model.move_embed(self.model, common_device)
 
@@ -701,7 +708,7 @@ class LLavaOVAwqQuantizer(AwqQuantizer):
         
         w = w.reshape(org_w_shape[0], 1, -1, group_size)
 
-        oc_batch_size = 256 if org_w_shape[0] % 256 == 0 else 64  
+        oc_batch_size = 16 if org_w_shape[0] % 16 == 0 else 8  
         assert org_w_shape[0] % oc_batch_size == 0
         w_all = w
         best_max_val_all = []

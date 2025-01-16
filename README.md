@@ -46,6 +46,12 @@
     pip install numpy==2.2.0
     ```
     **MUST use scripts in base folder, or will raise ModuleNotFoundError**
+
+5. use qwen2_vl for develop
+    ```bash
+    cd qwen2vl
+    pip install -e .
+    ```
 ### Implement details for xxxkv methods
 > The KV cache cluster (managed by the `xxxKVCluster` class) is responsible for selecting and compressing the KV states (keys and values), while the actual storage and dynamic updates of the compressed KV states are **still** handled by the `past_key_values` (aka. `Dynamiccache` class in `transformers` libraries), which remains the central mechanism for autoregressive decoding in Transformers. This separation allows for flexible and efficient cache management, critical for scaling LLMs in constrained environments.
 
