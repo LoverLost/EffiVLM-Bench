@@ -158,6 +158,22 @@ python3 -m accelerate.commands.launch \
     --output_path ./logs/chartqa/sparsegpt/
 
 
+## example for qwen2vl
+python3 -m accelerate.commands.launch \
+    --main_process_port=28175 \
+    --mixed_precision=bf16 \
+    --num_processes=2 \
+    -m lmms_eval \
+    --model qwen2_vl_with_kvcache  \
+    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-2B-Instruct,method=h2o,budgets=0.01,h2o_head_adaptive=True\
+    --tasks chartqa  \
+    --batch_size 1 \
+    --log_samples \
+    --log_samples_suffix chartqa \
+    --output_path ./logs/chartqa/qwen2vl/
 
+<<<<<<< HEAD
     
 >>>>>>> bc6ea5a (code for sparsegpt)
+=======
+>>>>>>> eca644b (add qwen2vl and adapted text-based methods, such as h2o, streamingLLM, SnapKV, and PyramidKV, to Qwen2VL, while verifying the data type of attention (torch.fp32) and the correctness of position_id)
