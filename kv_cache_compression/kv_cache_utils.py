@@ -220,7 +220,7 @@ class StreamingLLMKVCluster():
 
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups):
 
-        bsz, num_heads, q_len, head_dim = query_states.shape
+        bsz, num_kv_heads, q_len, head_dim = key_states.shape
 
         if q_len < self.max_capacity_prompt:
             return key_states, value_states
@@ -228,7 +228,7 @@ class StreamingLLMKVCluster():
             indices = torch.tensor(range(
                 self.max_capacity_prompt - self.window_size), dtype=torch.int64).to(key_states.device)
             indices = indices.unsqueeze(0).unsqueeze(
-                0).unsqueeze(-1).repeat(bsz, num_heads, 1, head_dim)
+                0).unsqueeze(-1).repeat(bsz, num_kv_heads, 1, head_dim)
 
             if self.merge is not None:
                 key_states, value_states = merge_kv(
@@ -300,6 +300,8 @@ class H2OKVCluster():
             self.max_capacity_prompt - self.window_size, dim=-1).indices
         indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
 
+        del attn_weights
+        
         k_past_compress = key_states[:, :, :-
                                      self.window_size, :].gather(dim=2, index=indices)
         v_past_compress = value_states[:, :, :-

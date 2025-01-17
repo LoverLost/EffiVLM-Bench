@@ -60,7 +60,7 @@ class Qwen2_VL_with_kvcache(lmms):
             extra_kwargs = {k: v for k, v in kwargs.items() if k not in defined_params}
 
             self.args = argparse.Namespace(**extra_kwargs)
-
+        
         accelerator = Accelerator()
         if accelerator.num_processes > 1:
             self._device = torch.device(f"cuda:{accelerator.local_process_index}")
@@ -73,6 +73,7 @@ class Qwen2_VL_with_kvcache(lmms):
             self.device_map = f"cuda:{accelerator.local_process_index}"
 
         if use_flash_attention_2:
+            print('using flash_attention_2')
             self._model = Qwen2VLForConditionalGeneration.from_pretrained(
                 pretrained,
                 torch_dtype="auto",
@@ -80,6 +81,7 @@ class Qwen2_VL_with_kvcache(lmms):
                 attn_implementation="flash_attention_2",
             ).eval()
         else:
+            print('using attention implementation:', attn_implementation)
             self._model = Qwen2VLForConditionalGeneration.from_pretrained(pretrained, torch_dtype="auto", device_map=self.device_map, attn_implementation=attn_implementation).eval()
         
         
