@@ -1,249 +1,42 @@
-# python3 -m accelerate.commands.launch \
-#     --main_process_port=28175 \
-#     --mixed_precision=bf16 \
-#     --num_processes=2 \
-#     -m lmms_eval \
-#     --model qwen2_vl_with_kvcache  \
-#     --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,use_flash_attention_2=true\
-#     --tasks chartqa  \
-#     --batch_size 1 \
-#     --log_samples \
-#     --log_samples_suffix chartqa \
-#     --output_path ./logs/qwen2vl/chatqa/
+#!/bin/bash
 
-python3 -m accelerate.commands.launch \
+export all_proxy=http://ln01:33269
+
+BASE_COMMAND="python3 -m accelerate.commands.launch \
     --main_process_port=28175 \
     --mixed_precision=bf16 \
-    --num_processes=2 \
+    --num_processes=4 \
     -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,method=random,budgets=0.01 \
-    --tasks chartqa  \
+    --model qwen2_vl_with_kvcache \
     --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix chartqa \
-    --output_path ./logs/qwen2vl/chatqa/
+    --log_samples"
 
+METHODS=(
+    "h2o h2o_head_adaptive=True,use_flash_attention_2=true"
+    "snapkv snapkv_head_adaptive=True,pooling=avgpool,use_flash_attention_2=true"
+    "random use_flash_attention_2=true"
+    "pyramidkv pyramidkv_head_adaptive=True,pooling=avgpool,use_flash_attention_2=true"
+)
 
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,method=streamingllm,budgets=0.01,use_flash_attention_2=true \
-    --tasks chartqa  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix chartqa \
-    --output_path ./logs/qwen2vl/chatqa/
+# 数据集配置
+TASKS=("chartqa" "docvqa_test" "testvqa_val")
 
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,method=h2o,budgets=0.01,h2o_head_adaptive=True,use_flash_attention_2=true\
-    --tasks chartqa  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix chartqa \
-    --output_path ./logs/qwen2vl/chartqa
+# 模型路径
+MODEL_PATH="/share/home/mhma/models/Qwen2-VL-7B-Instruct"
 
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-2B-Instruct,method=snapkv,budgets=0.01,snapkv_head_adaptive=True,pooling=avgpool\
-    --tasks chartqa  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix chartqa \
-    --output_path ./logs/qwen2vl/chartqa/
+# 循环生成并运行命令
+for TASK in "${TASKS[@]}"; do
+    for METHOD_CONFIG in "${METHODS[@]}"; do
+        METHOD=$(echo "$METHOD_CONFIG" | awk '{print $1}')
+        ADDITIONAL_ARGS=$(echo "$METHOD_CONFIG" | awk '{$1=""; print $0}' | xargs)
+        BUDGETS=(0.05 0.2 0.3)
 
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,method=random,budgets=0.1 \
-    --tasks chartqa  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix chartqa \
-    --output_path ./logs/qwen2vl/chatqa/
-
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,method=streamingllm,budgets=0.1 \
-    --tasks chartqa  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix chartqa \
-    --output_path ./logs/qwen2vl/chatqa/
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,method=h2o,budgets=0.1,h2o_head_adaptive=True\
-    --tasks chartqa  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix chartqa \
-    --output_path ./logs/qwen2vl/chartqa/
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-2B-Instruct,method=snapkv,budgets=0.1,snapkv_head_adaptive=True,pooling=avgpool\
-    --tasks chartqa  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix chartqa \
-    --output_path ./logs/qwen2vl/chartqa/
-
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct\
-    --tasks textvqa_val  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix textvqa_val \
-    --output_path ./logs/qwen2vl/textvqa_val/
-
-
-
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,method=random,budgets=0.01 \
-    --tasks textvqa_val  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix textvqa_val \
-    --output_path ./logs/qwen2vl/textvqa_val/
-
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,method=streamingllm,budgets=0.01 \
-    --tasks textvqa_val  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix textvqa_val \
-    --output_path ./logs/qwen2vl/textvqa_val/
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,method=h2o,budgets=0.01,h2o_head_adaptive=True\
-    --tasks textvqa_val  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix textvqa_val \
-    --output_path ./logs/qwen2vl/textvqa_val
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-2B-Instruct,method=snapkv,budgets=0.01,snapkv_head_adaptive=True,pooling=avgpool\
-    --tasks textvqa_val  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix textvqa_val \
-    --output_path ./logs/qwen2vl/textvqa_val/
-
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,method=random,budgets=0.1 \
-    --tasks textvqa_val  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix textvqa_val \
-    --output_path ./logs/qwen2vl/textvqa_val/
-
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,method=streamingllm,budgets=0.1 \
-    --tasks textvqa_val  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix textvqa_val \
-    --output_path ./logs/qwen2vl/textvqa_val/
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-7B-Instruct,method=h2o,budgets=0.1,h2o_head_adaptive=True\
-    --tasks textvqa_val  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix textvqa_val \
-    --output_path ./logs/qwen2vl/textvqa_val/
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=2 \
-    -m lmms_eval \
-    --model qwen2_vl_with_kvcache  \
-    --model_args pretrained=/share/home/mhma/models/Qwen2-VL-2B-Instruct,method=snapkv,budgets=0.1,snapkv_head_adaptive=True,pooling=avgpool\
-    --tasks textvqa_val  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix textvqa_val \
-    --output_path ./logs/qwen2vl/textvqa_val/
-
-
-
-
-
-
+        for BUDGET in "${BUDGETS[@]}"; do
+            MODEL_ARGS="pretrained=${MODEL_PATH},method=${METHOD},budgets=${BUDGET},${ADDITIONAL_ARGS}"
+            OUTPUT_PATH="./logs/qwen2vl/${TASK}"
+            COMMAND="${BASE_COMMAND} --tasks ${TASK} --output_path ${OUTPUT_PATH} --log_samples_suffix ${TASK} --model_args ${MODEL_ARGS}"
+            echo "Executing: ${COMMAND}"
+            eval ${COMMAND}
+        done
+    done
+done
