@@ -1,8 +1,7 @@
-dataset_path: /share/home/mhma/MLLM-Efficiency/datasets/DocVQA
+dataset_path: lmms-lab/DocVQA
 dataset_name: DocVQA
 dataset_kwargs:
-  token: False
-  load_from_disk: True
+  token: True
 output_type: generate_until
 doc_to_visual: !function utils.docvqa_doc_to_visual
 doc_to_text: !function utils.docvqa_doc_to_text

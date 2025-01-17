@@ -15,7 +15,7 @@ from .qwen_model import (
 
 from .kv_cache_utils import VlCacheKVCluster
 from .siglip_model import *
-
+from .llavaMeta_model import *
 
 def replace_qwen(args, method):
 
@@ -115,6 +115,7 @@ def replace_qwen(args, method):
         LlavaQwenSparseForCausalLM.bias = 0
         LlavaQwenSparseForCausalLM.scale = 13.5
         Qwen2SparseModel.ratio = getattr(args, 'r', None)
+
         
         
 def replace_mistral(method):
