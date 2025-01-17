@@ -69,3 +69,4 @@ models/upload.py
 sparsegpt.sh
 test-clash.sh
 test.sh
+*.out
