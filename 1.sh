@@ -42,3 +42,5 @@ python3 -m accelerate.commands.launch \
     --log_samples_suffix chartqa \
     --output_path ./logs/chartqa/qwen2vl/
 
+
+

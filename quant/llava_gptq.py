@@ -1,4 +1,5 @@
 import argparse
+import os
 
 
 from awq import AutoAWQForCausalLM
@@ -159,7 +160,8 @@ if __name__ == '__main__':
     
     
     model.quantize(model, calib_data = calibrated_data, quant_config=quant_config, quantizer_cls=LLavaOVAwqQuantizer)
-
+    if not os.path.exists(quant_path):
+        os.makedirs(quant_path)
     model.save_quantized(quant_path)
     tokenizer.save_pretrained(quant_path)
 
