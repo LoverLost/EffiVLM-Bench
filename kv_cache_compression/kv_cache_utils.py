@@ -15,6 +15,7 @@ from flash_attention_softmax_n import softmax_n
 def key_pruner_query_driven(kv_states, q_states, recent_size=128, ratio=0.3):
     _, _, seqlen, head_dim = kv_states.shape
     k = max(1, int(head_dim * ratio))
+    k = max(1, int(head_dim * ratio))
     # new efficient implementation
     queries_norm = torch.pow(q_states[..., -32:, :], 2).mean(dim=2)
     keys_norm = torch.pow(kv_states, 2).mean(dim=2)
@@ -219,7 +220,7 @@ class StreamingLLMKVCluster():
 
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups):
 
-        bsz, num_heads, q_len, head_dim = query_states.shape
+        bsz, num_kv_heads, q_len, head_dim = key_states.shape
 
         if q_len < self.max_capacity_prompt:
             return key_states, value_states
@@ -227,7 +228,7 @@ class StreamingLLMKVCluster():
             indices = torch.tensor(range(
                 self.max_capacity_prompt - self.window_size), dtype=torch.int64).to(key_states.device)
             indices = indices.unsqueeze(0).unsqueeze(
-                0).unsqueeze(-1).repeat(bsz, num_heads, 1, head_dim)
+                0).unsqueeze(-1).repeat(bsz, num_kv_heads, 1, head_dim)
 
             if self.merge is not None:
                 key_states, value_states = merge_kv(
@@ -299,6 +300,8 @@ class H2OKVCluster():
             self.max_capacity_prompt - self.window_size, dim=-1).indices
         indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
 
+        del attn_weights
+        
         k_past_compress = key_states[:, :, :-
                                      self.window_size, :].gather(dim=2, index=indices)
         v_past_compress = value_states[:, :, :-
@@ -1141,7 +1144,7 @@ class RandomCluster():
         bsz, num_heads, seq_len, head_dim = origin_key_states.shape
         window_size = max(1, int(seq_len * self.budgets * 0.1))
         other_size = max(1, int(seq_len * self.budgets * 0.9))
-        
+
         select_from_len = seq_len - window_size
 
         # 为每个batch和每个head生成随机索引，并排序以保持相对位置
@@ -1158,13 +1161,12 @@ class RandomCluster():
         
         # 扩展indices以匹配head_dim维度
         indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
-        
+
         # 使用gather收集选中的token
         selected_key_states = torch.gather(origin_key_states, dim=2, index=indices)
         selected_value_states = torch.gather(origin_value_states, dim=2, index=indices)
-        
-        return selected_key_states, selected_value_states
 
+        return selected_key_states, selected_value_states
 
 
 def init_StreamingLLM(self,

@@ -94,7 +94,6 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
                 output_hidden_states=output_hidden_states,
                 return_dict=return_dict,
             )
-
             hidden_states = outputs[0]
             logits = self.lm_head(hidden_states)
             return logits, labels

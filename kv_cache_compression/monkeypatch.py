@@ -13,9 +13,18 @@ from .qwen_model import (
     qwen_attention_forward_random
 )
 
+from .qwen_model import (
+    qwen_flash_attention_forward_streamingLLM,
+    qwen_flash_attention_forward_H2O,
+    qwen_flash_attention_forward_PyramidKV,
+    qwen_flash_attention_forward_random,
+    qwen_flash_attention_forward_snapkv,
+)
+
 from .kv_cache_utils import VlCacheKVCluster
 from .siglip_model import *
 from .llavaMeta_model import *
+import qwen2vl
 
 def replace_qwen(args, method):
 
@@ -116,8 +125,60 @@ def replace_qwen(args, method):
         LlavaQwenSparseForCausalLM.scale = 13.5
         Qwen2SparseModel.ratio = getattr(args, 'r', None)
 
+    
         
         
+        
+def replace_qwen2vl(args, method):
+     
+    if method == 'streamingllm':
+        print('using streamingllm')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.forward = qwen_attention_forward_streamingLLM
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_streamingLLM
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = args.budgets
+    
+    elif method == "h2o":
+        print('using h2o')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.forward = qwen_attention_forward_H2O
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.h2o_head_adaptive = args.h2o_head_adaptive
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_H2O
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.h2o_head_adaptive = args.h2o_head_adaptive
+        
+    elif method == 'snapkv':
+        print('using snapkv')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.forward = qwen_attention_forward_snapkv
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.snapkv_head_adaptive = args.snapkv_head_adaptive
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.pooling = args.pooling
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_snapkv
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.snapkv_head_adaptive = args.snapkv_head_adaptive
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.pooling = args.pooling
+        
+    elif method == 'pyramidkv':
+        print('using pyramidkv')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.forward = qwen_attn_forward_PyramidKV
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.pyramidkv_head_adaptive = args.pyramidkv_head_adaptive
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.pooling = args.pooling
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_PyramidKV
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.pyramidkv_head_adaptive = args.pyramidkv_head_adaptive
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.pooling = args.pooling
+    
+    elif method == 'random':
+        print('using random')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.budgets = getattr(args, 'budgets', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.forward = qwen_attention_forward_random
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = getattr(args, 'budgets', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_random
+    
+
+         
+     
 def replace_mistral(method):
     pass
 
