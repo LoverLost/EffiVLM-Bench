@@ -124,7 +124,7 @@ class LlavaMetaModel:
             rank0_print(f"Loaded vision resampler weights from {pretrain_mm_mlp_adapter}. Incompatible keys: {incompatible_keys}")
 
 
-def unpad_image(tensor, original_size):
+def unpad_image(tensor, original_size):                               # HACK just adjust to fit mask which has two dimensions
     """
     Unpads a PyTorch tensor of a padded and resized image.
 
@@ -136,7 +136,10 @@ def unpad_image(tensor, original_size):
     torch.Tensor: The unpadded image tensor.
     """
     original_width, original_height = original_size
-    current_height, current_width = tensor.shape[1:]
+    if tensor.ndim == 3:
+        current_height, current_width = tensor.shape[1:]
+    else:
+        current_height, current_width = tensor.shape
 
     # Compute aspect ratios
     original_aspect_ratio = original_width / original_height
@@ -148,13 +151,19 @@ def unpad_image(tensor, original_size):
         scale_factor = current_width / original_width
         new_height = int(original_height * scale_factor)
         padding = (current_height - new_height) // 2
-        unpadded_tensor = tensor[:, padding : current_height - padding, :]
+        if tensor.ndim == 3:
+            unpadded_tensor = tensor[:, padding : current_height - padding, :]
+        else:
+            unpadded_tensor = tensor[padding : current_height - padding, :]
     else:
         # Padding was added to the width
         scale_factor = current_height / original_height
         new_width = int(original_width * scale_factor)
         padding = (current_width - new_width) // 2
-        unpadded_tensor = tensor[:, :, padding : current_width - padding]
+        if tensor.ndim == 3:
+            unpadded_tensor = tensor[:, :, padding : current_width - padding]
+        else:
+            unpadded_tensor = tensor[:, padding : current_width - padding]
 
     return unpadded_tensor
 

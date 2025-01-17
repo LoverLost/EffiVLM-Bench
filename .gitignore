@@ -63,3 +63,4 @@ scripts/hf_download.sh
 scripts/zk_scripts
 /data
 *.yaml
+*.out
