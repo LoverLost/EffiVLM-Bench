@@ -144,6 +144,7 @@ python3 -m accelerate.commands.launch \
     --output_path ./logs/chartqa/qwen2vl/
 
 
+<<<<<<< HEAD
 python3 -m accelerate.commands.launch \
     --main_process_port=28175 \
     --mixed_precision=bf16 \
@@ -177,3 +178,6 @@ python3 -m accelerate.commands.launch \
 >>>>>>> bc6ea5a (code for sparsegpt)
 =======
 >>>>>>> eca644b (add qwen2vl and adapted text-based methods, such as h2o, streamingLLM, SnapKV, and PyramidKV, to Qwen2VL, while verifying the data type of attention (torch.fp32) and the correctness of position_id)
+=======
+
+>>>>>>> f817dd7 (use flash-attn2 on qwen2vl)
