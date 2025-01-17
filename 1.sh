@@ -103,6 +103,11 @@ python3 -m accelerate.commands.launch \
     --output_path ./logs/chartqa/qwen2vl/
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     
 =======
 >>>>>>> 3b02ec3 (add qwen2vl and adapted text-based methods, such as h2o, streamingLLM, SnapKV, and PyramidKV, to Qwen2VL, while verifying the data type of attention (torch.fp32) and the correctness of position_id)
+=======
+
+
+>>>>>>> ca07ceb (use flash-attn2 on qwen2vl)
