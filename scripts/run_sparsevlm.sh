@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 #!/bin/bash
 #SBATCH --job-name="train"
 #SBATCH -o all.out
@@ -17,6 +18,27 @@ export https_proxy="http://127.0.0.1:12397"
 export HTTPS_PROXY="http://127.0.0.1:12397"
 export all_proxy="socks5h://127.0.0.1:12382"
 export ALL_PROXY="socks5h://127.0.0.1:12382"
+=======
+# #!/bin/bash
+# #SBATCH --job-name="train"
+# #SBATCH -o h2o_true.out
+# #SBATCH -p compute                            
+# #SBATCH -N 1                                  
+# #SBATCH -t 3:00:00                            
+# #SBATCH --cpus-per-task=16                                                               
+# #SBATCH -w gpu06
+# #SBATCH --gres=gpu:a100-sxm4-80gb:1
+
+# cd
+# cd clash
+# ./clash -d . &
+# export http_proxy="http://127.0.0.1:12397"
+# export HTTP_PROXY="http://127.0.0.1:12397"
+# export https_proxy="http://127.0.0.1:12397"
+# export HTTPS_PROXY="http://127.0.0.1:12397"
+# export all_proxy="socks5h://127.0.0.1:12382"
+# export ALL_PROXY="socks5h://127.0.0.1:12382"
+>>>>>>> c13b117 (xxx)
 cd
 source ~/.bashrc
 source ~/anaconda3/bin/activate
