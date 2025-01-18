@@ -1,22 +1,22 @@
-# #!/bin/bash
-# #SBATCH --job-name="train"
-# #SBATCH -o h2o_true.out
-# #SBATCH -p compute                            
-# #SBATCH -N 1                                  
-# #SBATCH -t 3:00:00                            
-# #SBATCH --cpus-per-task=16                                                               
-# #SBATCH -w gpu06
-# #SBATCH --gres=gpu:a100-sxm4-80gb:1
+#!/bin/bash
+#SBATCH --job-name="train"
+#SBATCH -o all.out
+#SBATCH -p compute                            
+#SBATCH -N 1                                  
+#SBATCH -t 80:00:00                            
+#SBATCH --cpus-per-task=16                                                               
+#SBATCH -w gpu19
+#SBATCH --gres=gpu:a100-sxm4-80gb:1
 
-# cd
-# cd clash
-# ./clash -d . &
-# export http_proxy="http://127.0.0.1:12397"
-# export HTTP_PROXY="http://127.0.0.1:12397"
-# export https_proxy="http://127.0.0.1:12397"
-# export HTTPS_PROXY="http://127.0.0.1:12397"
-# export all_proxy="socks5h://127.0.0.1:12382"
-# export ALL_PROXY="socks5h://127.0.0.1:12382"
+cd
+cd clash
+./clash -d . &
+export http_proxy="http://127.0.0.1:12397"
+export HTTP_PROXY="http://127.0.0.1:12397"
+export https_proxy="http://127.0.0.1:12397"
+export HTTPS_PROXY="http://127.0.0.1:12397"
+export all_proxy="socks5h://127.0.0.1:12382"
+export ALL_PROXY="socks5h://127.0.0.1:12382"
 cd
 source ~/.bashrc
 source ~/anaconda3/bin/activate
@@ -30,12 +30,12 @@ NUM_PROCESSES=1
 export CUDA_VISIBLE_DEVICES="0"
 
 # 保留率
-budgets_ratio_list=(0.1) 
+budgets_ratio_list=(0.01 0.05 0.1 0.2 0.4) 
 # 日志后缀
-log_suffix_name_list=(10)
+log_suffix_name_list=(1 5 10 20 40)
 
 # 遍历的 task 列表
-task_list=("mathvista_testmini")
+task_list=("docvqa_test" "chartqa" "textvqa_val" "infovqa_test" "ocrbench" "mathvista_testmini")
 
 export CONDA_DEFAULT_ENV="mllm-efficiency"
 export PATH="/home/rcmu/anaconda3/envs/mllm-efficiency/bin:$PATH"
@@ -65,8 +65,8 @@ for task in "${task_list[@]}"; do
         --log_samples \
         --log_samples_suffix logs_onevision_sparsevlm_${LOG_SUFFIX_NAME} \
         --output_path $ROOT_DIR/logs_onevision_sparsevlm_${task}_${LOG_SUFFIX_NAME} \
-        --model llava_onevision_with_kvcache \
-        --model_args "pretrained=/home/rcmu/models/llava-onevision-qwen2-7b-ov,method=snapkv,snapkv_head_adaptive=false,pooling=avgpool,budgets=${BUDGETS_RATIO}" \
+        --model qwen2_vl_with_kvcache \
+        --model_args "pretrained=/home/rcmu/models/Qwen2-VL-7B-Instruct,method=look-m,merge=false,use_flash_attention_2=true,budgets=${BUDGETS_RATIO}" \
         --tasks $task
         date
     done
