@@ -1,4 +1,7 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 751488c (add look-m to vl)
 #!/bin/bash
 #SBATCH --job-name="train"
 #SBATCH -o all.out
@@ -6,6 +9,7 @@
 #SBATCH -N 1                                  
 #SBATCH -t 80:00:00                            
 #SBATCH --cpus-per-task=16                                                               
+<<<<<<< HEAD
 #SBATCH -w gpu18
 #SBATCH --gres=gpu:nvidia_a100_80gb_pcie:1
 
@@ -39,6 +43,20 @@ export ALL_PROXY="socks5h://127.0.0.1:12382"
 # export all_proxy="socks5h://127.0.0.1:12382"
 # export ALL_PROXY="socks5h://127.0.0.1:12382"
 >>>>>>> c13b117 (xxx)
+=======
+#SBATCH -w gpu19
+#SBATCH --gres=gpu:a100-sxm4-80gb:1
+
+cd
+cd clash
+./clash -d . &
+export http_proxy="http://127.0.0.1:12397"
+export HTTP_PROXY="http://127.0.0.1:12397"
+export https_proxy="http://127.0.0.1:12397"
+export HTTPS_PROXY="http://127.0.0.1:12397"
+export all_proxy="socks5h://127.0.0.1:12382"
+export ALL_PROXY="socks5h://127.0.0.1:12382"
+>>>>>>> 751488c (add look-m to vl)
 cd
 source ~/.bashrc
 source ~/anaconda3/bin/activate
@@ -57,7 +75,11 @@ budgets_ratio_list=(0.01 0.05 0.1 0.2 0.4)
 log_suffix_name_list=(1 5 10 20 40)
 
 # 遍历的 task 列表
+<<<<<<< HEAD
 task_list=("docvqa_test" "chartqq" "textvqa_val" "infovqa_test" "ocrbench" "ai2d" "gqa" "mmmu" "mme" "realworldqa" "mmstar")
+=======
+task_list=("docvqa_test" "chartqa" "textvqa_val" "infovqa_test" "ocrbench" "mathvista_testmini")
+>>>>>>> 751488c (add look-m to vl)
 
 export CONDA_DEFAULT_ENV="mllm-efficiency"
 export PATH="/home/rcmu/anaconda3/envs/mllm-efficiency/bin:$PATH"
@@ -88,7 +110,11 @@ for task in "${task_list[@]}"; do
         --log_samples_suffix logs_onevision_sparsevlm_${LOG_SUFFIX_NAME} \
         --output_path $ROOT_DIR/logs_onevision_sparsevlm_${task}_${LOG_SUFFIX_NAME} \
         --model qwen2_vl_with_kvcache \
+<<<<<<< HEAD
         --model_args "pretrained=/home/rcmu/models/Qwen2-VL-7B-Instruct,method=fastv,target_layer_idx=2,budgets=${BUDGETS_RATIO},origin=false,use_flash_attention_2=true" \
+=======
+        --model_args "pretrained=/home/rcmu/models/Qwen2-VL-7B-Instruct,method=look-m,merge=false,use_flash_attention_2=true,budgets=${BUDGETS_RATIO}" \
+>>>>>>> 751488c (add look-m to vl)
         --tasks $task
         date
     done
