@@ -582,15 +582,28 @@ class LOOK_MCluster():
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups, text_mask, head_dim, dropout, training, origin_key_states, origin_value_states, merge=True):
         assert len(text_mask) == 1, '当前只能处理一个batch'
 
+        '''
+        key_states is repeated. If key_states is None, we use origin_key_states here.
+        '''
+        if key_states is None:
+            key_states = repeat_kv(origin_key_states, num_key_value_groups)
+
         attn_score_cache = torch.matmul(
             query_states.float(), key_states.transpose(2, 3).float()) / math.sqrt(head_dim)
         if attention_mask is not None:  # no matter the length, we just slice it
             causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
             attn_score_cache = attn_score_cache + causal_mask
+        else:
+            q_len = query_states.shape[-2]
+            the_mask = torch.triu(torch.full((q_len,q_len),float('-inf')),diagonal=1).to(torch.float32).to(query_states.device)
+            attn_score_cache = attn_score_cache + the_mask
+            del the_mask
+        
         attn_score_cache = nn.functional.softmax(
             attn_score_cache, dim=-1, dtype=torch.float32).to(query_states.dtype)
-        attn_score_cache = nn.functional.dropout(
-            attn_score_cache, p=dropout, training=training)
+        if dropout is not None:
+            attn_score_cache = nn.functional.dropout(
+                attn_score_cache, p=dropout, training=training)
 
         # if self.hh_ratio is not None and attn_score_cache.shape[-2]>1:  # 判断new_seq_len是否大于1，即是否是prefill阶段
         #     self.hh_size = int(attn_score_cache.shape[-1] * self.hh_ratio)  # 309  列这个的目的就是个例子，为了和下面的代码注释对应，能知道每个数的根源是什么
@@ -600,8 +613,8 @@ class LOOK_MCluster():
 
         # self.get_importance(attn_score_cache)
 
-        if self.layer_idx == 0:
-            device_id = torch.cuda.current_device()
+        # if self.layer_idx == 0:
+        #     device_id = torch.cuda.current_device()
             # print('*'*30)
             # print(f'正在处理kv cache, 设备id为: {device_id}')
             # print('原始长度为： ', end='')

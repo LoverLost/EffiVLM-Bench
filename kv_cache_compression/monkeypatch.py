@@ -19,11 +19,11 @@ from .qwen_model import (
     qwen_flash_attention_forward_PyramidKV,
     qwen_flash_attention_forward_random,
     qwen_flash_attention_forward_snapkv,
+    qwen_flash_attention_forward_look_m,
 )
 
 from .kv_cache_utils import VlCacheKVCluster
 from .siglip_model import *
-from .llavaMeta_model import *
 import qwen2vl
 
 def replace_qwen(args, method):
@@ -175,6 +175,14 @@ def replace_qwen2vl(args, method):
         qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.forward = qwen_attention_forward_random
         qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = getattr(args, 'budgets', None)
         qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_random
+
+    elif method == 'look-m':
+        print('using look-m')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budget = getattr(args, 'budgets', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.merge = getattr(args, 'merge', False)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.hh_ratio = getattr(args, 'hh_ratio', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.recent_ratio = getattr(args, 'recent_ratio', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_look_m
     
 
          

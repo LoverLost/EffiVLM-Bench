@@ -1680,6 +1680,10 @@ class Qwen2VLForConditionalGeneration(Qwen2VLPreTrainedModel, GenerationMixin):
                 image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
                 inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
 
+                text_image_mask = (input_ids != 151655)   # HACK  change here to get image_mask(image position is false, else is true)
+                for layer in self.base_model.layers:
+                        layer.self_attn.text_image_mask = text_image_mask
+
             if pixel_values_videos is not None:
                 pixel_values_videos = pixel_values_videos.type(self.visual.get_dtype())
                 video_embeds = self.visual(pixel_values_videos, grid_thw=video_grid_thw)
