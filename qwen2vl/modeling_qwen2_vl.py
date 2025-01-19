@@ -1662,7 +1662,7 @@ class Qwen2VLForConditionalGeneration(Qwen2VLPreTrainedModel, GenerationMixin):
 
         if inputs_embeds is None:
             inputs_embeds = self.model.embed_tokens(input_ids)
-            if pixel_values is not None:
+            if pixel_values is not None:  # prefill stage
                 pixel_values = pixel_values.type(self.visual.get_dtype())
                 image_embeds = self.visual(pixel_values, grid_thw=image_grid_thw)
                 n_image_tokens = (input_ids == self.config.image_token_id).sum().item()
@@ -1677,7 +1677,7 @@ class Qwen2VLForConditionalGeneration(Qwen2VLPreTrainedModel, GenerationMixin):
                     .expand_as(inputs_embeds)
                     .to(inputs_embeds.device)
                 )
-                image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
+                image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)   # 151655
                 inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
 
                 text_image_mask = (input_ids != 151655)   # HACK  change here to get image_mask(image position is false, else is true)

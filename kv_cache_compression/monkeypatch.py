@@ -25,6 +25,10 @@ from .qwen_model import (
 from .kv_cache_utils import VlCacheKVCluster
 from .siglip_model import *
 import qwen2vl
+from .qwen2vl_model import (
+    qwen_vl_model_forward_fastv,
+    qwen_vl_flash_attention_forward_fastv
+)
 
 def replace_qwen(args, method):
 
@@ -183,6 +187,17 @@ def replace_qwen2vl(args, method):
         qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.hh_ratio = getattr(args, 'hh_ratio', None)
         qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.recent_ratio = getattr(args, 'recent_ratio', None)
         qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_look_m
+
+    elif method == 'fastv':
+        print('using fastv')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLModel.forward = qwen_vl_model_forward_fastv
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_vl_flash_attention_forward_fastv
+        qwen2vl.modeling_qwen2_vl.Qwen2VLModel.target_layer_idx = getattr(args, 'target_layer_idx', 2)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.target_layer_idx = getattr(args, 'target_layer_idx', 2)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLModel.budgets = getattr(args, 'budgets', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLModel.origin = getattr(args, 'origin', False)
+
+
     
 
          

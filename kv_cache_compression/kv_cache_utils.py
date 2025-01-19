@@ -581,29 +581,23 @@ class LOOK_MCluster():
     # attn_score_cache是[bsz, num_heads, new_seq_len, total_seq_len]
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups, text_mask, head_dim, dropout, training, origin_key_states, origin_value_states, merge=True):
         assert len(text_mask) == 1, '当前只能处理一个batch'
-
-        '''
-        key_states is repeated. If key_states is None, we use origin_key_states here.
-        '''
+        
+        q_len = query_states.shape[-2]
         if key_states is None:
             key_states = repeat_kv(origin_key_states, num_key_value_groups)
 
         attn_score_cache = torch.matmul(
             query_states.float(), key_states.transpose(2, 3).float()) / math.sqrt(head_dim)
-        if attention_mask is not None:  # no matter the length, we just slice it
-            causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
-            attn_score_cache = attn_score_cache + causal_mask
-        else:
-            q_len = query_states.shape[-2]
-            the_mask = torch.triu(torch.full((q_len,q_len),float('-inf')),diagonal=1).to(torch.float32).to(query_states.device)
-            attn_score_cache = attn_score_cache + the_mask
-            del the_mask
-        
+
+        if attention_mask is None:
+            attention_mask = torch.triu(torch.full((q_len,q_len),float('-inf')),diagonal=1).to(dtype=torch.float32,device=attn_score_cache.device)
+        attn_score_cache = attn_score_cache + attention_mask
+        del attention_mask
         attn_score_cache = nn.functional.softmax(
-            attn_score_cache, dim=-1, dtype=torch.float32).to(query_states.dtype)
+            attn_score_cache, dim=-1, dtype=torch.float32)
         if dropout is not None:
             attn_score_cache = nn.functional.dropout(
-                attn_score_cache, p=dropout, training=training)
+            attn_score_cache, p=dropout, training=training)
 
         # if self.hh_ratio is not None and attn_score_cache.shape[-2]>1:  # 判断new_seq_len是否大于1，即是否是prefill阶段
         #     self.hh_size = int(attn_score_cache.shape[-1] * self.hh_ratio)  # 309  列这个的目的就是个例子，为了和下面的代码注释对应，能知道每个数的根源是什么
@@ -613,15 +607,8 @@ class LOOK_MCluster():
 
         # self.get_importance(attn_score_cache)
 
-        # if self.layer_idx == 0:
-        #     device_id = torch.cuda.current_device()
-            # print('*'*30)
-            # print(f'正在处理kv cache, 设备id为: {device_id}')
-            # print('原始长度为： ', end='')
-            # print(attn_score_cache.shape[-1])
-            # print('*'*30)
-
         self.update(attn_score_cache)
+        del attn_score_cache
         # [bsz, num_kv_heads, seq_len, kv_head_dim]
         seq_len = origin_key_states.size(self.k_seq_dim)
 
@@ -704,6 +691,7 @@ class LOOK_MCluster():
         #     print('*'*30)
 
         return k_hh_recent, v_hh_recent, None, None    # 最后多加了两个参数，为了分析用
+
 
 
 class SnapKVCluster():
