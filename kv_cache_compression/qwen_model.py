@@ -2505,6 +2505,8 @@ def qwen_flash_attention_forward_look_m(self,
     if q_len > 1:
         init_LOOK_M(self)
         self.kv_seq_len = 0
+        if self.layer_idx == 0:
+            print(q_len)
     
     query_states = self.q_proj(hidden_states)
     key_states = self.k_proj(hidden_states)
