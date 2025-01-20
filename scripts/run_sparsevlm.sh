@@ -3,7 +3,7 @@
 #SBATCH -o all.out
 #SBATCH -p compute                            
 #SBATCH -N 1                                  
-#SBATCH -t 100:00:00                            
+#SBATCH -t 80:00:00                            
 #SBATCH --cpus-per-task=16                                                               
 #SBATCH -w gpu18
 #SBATCH --gres=gpu:nvidia_a100_80gb_pcie:1
@@ -30,9 +30,9 @@ NUM_PROCESSES=1
 export CUDA_VISIBLE_DEVICES="0"
 
 # 保留率
-budgets_ratio_list=(0.01 0.1 0.4) 
+budgets_ratio_list=(0.01 0.05 0.1 0.2 0.4) 
 # 日志后缀
-log_suffix_name_list=(1 10 40)
+log_suffix_name_list=(1 5 10 20 40)
 
 # 遍历的 task 列表
 task_list=("docvqa_test" "chartqq" "textvqa_val" "infovqa_test" "ocrbench" "ai2d" "gqa" "mmmu" "mme" "realworldqa" "mmstar")
@@ -45,19 +45,14 @@ export OPENAI_API_KEY="sk-jGzkmsfwW3Cn798VcBmMMJQ9L2R6q2m7SMbl5AZRKJmWsrJF"
 
 
 # 循环遍历 budgets_ratio_list 和 task_list
-for merge in "${merge_list[@]}"; do
-    for task in "${task_list[@]}"; do
-        for i in "${!budgets_ratio_list[@]}"; do
-            echo "----------------------------------------"
-            echo "Task: $task"
-            echo "Index: $i, 保留率: ${budgets_ratio_list[$i]}, log 后缀: ${log_suffix_name_list[$i]}"
+for task in "${task_list[@]}"; do
+    for i in "${!budgets_ratio_list[@]}"; do
+        echo "----------------------------------------"
+        echo "Task: $task"
+        echo "Index: $i, 保留率: ${budgets_ratio_list[$i]}, log 后缀: ${log_suffix_name_list[$i]}"
 
-            BUDGETS_RATIO=${budgets_ratio_list[$i]}
-            LOG_SUFFIX_NAME=${log_suffix_name_list[$i]}
-                
-            echo "BUDGETS_RATIO: $BUDGETS_RATIO, LOG_SUFFIX_NAME: $LOG_SUFFIX_NAME"
-            echo "----------------------------------------"
-            date
+        BUDGETS_RATIO=${budgets_ratio_list[$i]}
+        LOG_SUFFIX_NAME=${log_suffix_name_list[$i]}
             
         echo "BUDGETS_RATIO: $BUDGETS_RATIO, LOG_SUFFIX_NAME: $LOG_SUFFIX_NAME"
         echo "----------------------------------------"
