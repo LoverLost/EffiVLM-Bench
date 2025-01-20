@@ -1688,6 +1688,7 @@ class Qwen2VLForConditionalGeneration(Qwen2VLPreTrainedModel, GenerationMixin):
                         layer.self_attn.text_image_mask = text_image_mask
 
                 text_image_mask = (input_ids != 151655)   # HACK  change here to get image_mask(image position is false, else is true)
+                self.base_model.text_image_mask = text_image_mask
                 for layer in self.base_model.layers:
                         layer.self_attn.text_image_mask = text_image_mask
 
