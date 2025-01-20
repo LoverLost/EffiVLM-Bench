@@ -343,7 +343,7 @@ class VisionAttention(nn.Module):
             [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
         )
         for i in range(1, len(cu_seqlens)):
-            attention_mask[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0
+            attention_mask[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0  # 控制前一张图片对后一张图片的注意力为0
 
         q = q.transpose(0, 1)
         k = k.transpose(0, 1)
@@ -359,12 +359,13 @@ class VisionAttention(nn.Module):
 
 
 class VisionFlashAttention2(nn.Module):
-    def __init__(self, dim: int, num_heads: int = 16) -> None:
+    def __init__(self, dim: int, num_heads: int = 16, layer_idx: int = -1) -> None:
         super().__init__()
         self.num_heads = num_heads
         self.qkv = nn.Linear(dim, dim * 3, bias=True)
         self.proj = nn.Linear(dim, dim)
-
+        self.layer_idx = layer_idx
+        
     def forward(
         self, hidden_states: torch.Tensor, cu_seqlens: torch.Tensor, rotary_pos_emb: torch.Tensor = None
     ) -> torch.Tensor:
@@ -417,14 +418,15 @@ QWEN2_VL_VISION_ATTENTION_CLASSES = {
 
 
 class Qwen2VLVisionBlock(nn.Module):
-    def __init__(self, config, attn_implementation: str = "eager") -> None:
+    def __init__(self, config, attn_implementation: str = "eager", layer_idx: int = -1) -> None:
         super().__init__()
         self.norm1 = LayerNorm(config.embed_dim, eps=1e-6)
         self.norm2 = LayerNorm(config.embed_dim, eps=1e-6)
+        self.layer_idx = layer_idx
         mlp_hidden_dim = int(config.embed_dim * config.mlp_ratio)
 
-        self.attn = QWEN2_VL_VISION_ATTENTION_CLASSES[attn_implementation](
-            config.embed_dim, num_heads=config.num_heads
+        self.attn = QWEN2_VL_VISION_ATTENTION_CLASSES[attn_implementation](   # 这里默认使用的是flash_attention_2
+            config.embed_dim, num_heads=config.num_heads, layer_idx=layer_idx
         )
         self.mlp = VisionMlp(dim=config.embed_dim, hidden_dim=mlp_hidden_dim, hidden_act=config.hidden_act)
 
@@ -979,7 +981,7 @@ class Qwen2VisionTransformerPretrainedModel(Qwen2VLPreTrainedModel):
         self.rotary_pos_emb = VisionRotaryEmbedding(head_dim // 2)
 
         self.blocks = nn.ModuleList(
-            [Qwen2VLVisionBlock(config, config._attn_implementation) for _ in range(config.depth)]
+            [Qwen2VLVisionBlock(config, config._attn_implementation, layer_idx=i) for i in range(config.depth)]   # 32 layers
         )
         self.merger = PatchMerger(
             dim=config.hidden_size, context_dim=config.embed_dim, spatial_merge_size=config.spatial_merge_size
@@ -1678,9 +1680,10 @@ class Qwen2VLForConditionalGeneration(Qwen2VLPreTrainedModel, GenerationMixin):
                     .to(inputs_embeds.device)
                 )
                 image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)   # 151655
-                inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
+                inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)               # FIXME  
 
                 text_image_mask = (input_ids != 151655)   # HACK  change here to get image_mask(image position is false, else is true)
+                self.base_model.text_image_mask = text_image_mask
                 for layer in self.base_model.layers:
                         layer.self_attn.text_image_mask = text_image_mask
 
@@ -1708,13 +1711,13 @@ class Qwen2VLForConditionalGeneration(Qwen2VLPreTrainedModel, GenerationMixin):
         # if we get 4D attention mask we cannot calculate rope deltas anymore. TODO @raushan fixme
         if position_ids is None and input_ids is not None and (attention_mask is None or attention_mask.ndim == 2):
             # calculate RoPE index once per generation in the pre-fill stage only
-            if (cache_position is not None and cache_position[0] == 0) or self.rope_deltas is None:
+            if (cache_position is not None and cache_position[0] == 0) or self.rope_deltas is None:    # prefill stage
                 position_ids, rope_deltas = self.get_rope_index(
                     input_ids, image_grid_thw, video_grid_thw, attention_mask
                 )
                 self.rope_deltas = rope_deltas
             # then use the prev pre-calculated rope-deltas to get the correct position ids
-            else:
+            else:   #  decode state
                 batch_size, seq_length, _ = inputs_embeds.shape
                 delta = cache_position[0] + self.rope_deltas if cache_position is not None else 0
                 position_ids = torch.arange(seq_length, device=inputs_embeds.device)

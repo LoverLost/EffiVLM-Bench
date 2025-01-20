@@ -27,7 +27,11 @@ from .siglip_model import *
 import qwen2vl
 from .qwen2vl_model import (
     qwen_vl_model_forward_fastv,
-    qwen_vl_flash_attention_forward_fastv
+    qwen_vl_flash_attention_forward_fastv,
+    qwen2vl_vision_flash_attention2_forward_visionzip,
+    qwen2vl_vision_tower_forward_visionzip,
+    qwen2vl_vision_block_forward_visionzip,
+    qwen2vl_generation_forward_visionzip
 )
 
 def replace_qwen(args, method):
@@ -196,6 +200,14 @@ def replace_qwen2vl(args, method):
         qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.target_layer_idx = getattr(args, 'target_layer_idx', 2)
         qwen2vl.modeling_qwen2_vl.Qwen2VLModel.budgets = getattr(args, 'budgets', None)
         qwen2vl.modeling_qwen2_vl.Qwen2VLModel.origin = getattr(args, 'origin', False)
+
+    elif method == 'visionzip':
+        print('using visionzip')
+        qwen2vl.modeling_qwen2_vl.VisionFlashAttention2.forward = qwen2vl_vision_flash_attention2_forward_visionzip
+        qwen2vl.modeling_qwen2_vl.Qwen2VisionTransformerPretrainedModel.forward = qwen2vl_vision_tower_forward_visionzip
+        qwen2vl.modeling_qwen2_vl.Qwen2VLVisionBlock.forward = qwen2vl_vision_block_forward_visionzip
+        qwen2vl.modeling_qwen2_vl.Qwen2VisionTransformerPretrainedModel.budgets = getattr(args, 'budgets', 0.01)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLForConditionalGeneration.forward = qwen2vl_generation_forward_visionzip
 
 
     

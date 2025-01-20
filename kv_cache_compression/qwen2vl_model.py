@@ -1,4 +1,6 @@
 from copy import deepcopy
+from dataclasses import dataclass
+from torch.nn import CrossEntropyLoss, LayerNorm
 from lmms_eval.utils import eval_logger
 import torch
 import transformers
@@ -12,10 +14,17 @@ from transformers.models.llama.modeling_llama import (
     apply_rotary_pos_emb,
     repeat_kv,
 )
-from transformers.modeling_outputs import BaseModelOutputWithPast
+from transformers.modeling_outputs import (
+    BaseModelOutputWithPast,
+    ModelOutput,
+)
 from transformers.utils import (
-    logging,
+    add_start_docstrings,
     add_start_docstrings_to_model_forward,
+    is_flash_attn_2_available,
+    is_flash_attn_greater_or_equal_2_10,
+    logging,
+    replace_return_docstrings,
 )
 from .kv_cache_utils import (
     init_StreamingLLM, 
@@ -41,6 +50,141 @@ if is_flash_attn_2_available():
     from flash_attn import flash_attn_varlen_func
     from transformers.modeling_flash_attention_utils import _flash_attention_forward
 logger = logging.get_logger(__name__)
+
+################################  here are some util functions or classes copied from qwen2vl  ###############
+_CONFIG_FOR_DOC = "Qwen2VLConfig"
+QWEN2_VL_INPUTS_DOCSTRING = r"""
+    Args:
+        input_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`):
+            Indices of input sequence tokens in the vocabulary. Padding will be ignored by default should you provide
+            it.
+
+            Indices can be obtained using [`AutoTokenizer`]. See [`PreTrainedTokenizer.encode`] and
+            [`PreTrainedTokenizer.__call__`] for details.
+
+            [What are input IDs?](../glossary#input-ids)
+        attention_mask (`torch.Tensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Mask to avoid performing attention on padding token indices. Mask values selected in `[0, 1]`:
+
+            - 1 for tokens that are **not masked**,
+            - 0 for tokens that are **masked**.
+
+            [What are attention masks?](../glossary#attention-mask)
+
+            Indices can be obtained using [`AutoTokenizer`]. See [`PreTrainedTokenizer.encode`] and
+            [`PreTrainedTokenizer.__call__`] for details.
+
+            If `past_key_values` is used, optionally only the last `decoder_input_ids` have to be input (see
+            `past_key_values`).
+
+            If you want to change padding behavior, you should read [`modeling_opt._prepare_decoder_attention_mask`]
+            and modify to your needs. See diagram 1 in [the paper](https://arxiv.org/abs/1910.13461) for more
+            information on the default strategy.
+
+            - 1 indicates the head is **not masked**,
+            - 0 indicates the head is **masked**.
+        position_ids (`torch.LongTensor` of shape `(batch_size, sequence_length)`, *optional*):
+            Indices of positions of each input sequence tokens in the position embeddings. Selected in the range `[0,
+            config.n_positions - 1]`. [What are position IDs?](../glossary#position-ids)
+        past_key_values (`tuple(tuple(torch.FloatTensor))`, *optional*, returned when `use_cache=True` is passed or when `config.use_cache=True`):
+            Tuple of `tuple(torch.FloatTensor)` of length `config.n_layers`, with each tuple having 2 tensors of shape
+            `(batch_size, num_heads, sequence_length, embed_size_per_head)`) and 2 additional tensors of shape
+            `(batch_size, num_heads, encoder_sequence_length, embed_size_per_head)`.
+
+            Contains pre-computed hidden-states (key and values in the self-attention blocks and in the cross-attention
+            blocks) that can be used (see `past_key_values` input) to speed up sequential decoding.
+
+            If `past_key_values` are used, the user can optionally input only the last `decoder_input_ids` (those that
+            don't have their past key value states given to this model) of shape `(batch_size, 1)` instead of all
+            `decoder_input_ids` of shape `(batch_size, sequence_length)`.
+        inputs_embeds (`torch.FloatTensor` of shape `(batch_size, sequence_length, hidden_size)`, *optional*):
+            Optionally, instead of passing `input_ids` you can choose to directly pass an embedded representation. This
+            is useful if you want more control over how to convert `input_ids` indices into associated vectors than the
+            model's internal embedding lookup matrix.
+        use_cache (`bool`, *optional*):
+            If set to `True`, `past_key_values` key value states are returned and can be used to speed up decoding (see
+            `past_key_values`).
+        output_attentions (`bool`, *optional*):
+            Whether or not to return the attentions tensors of all attention layers. See `attentions` under returned
+            tensors for more detail.
+        output_hidden_states (`bool`, *optional*):
+            Whether or not to return the hidden states of all layers. See `hidden_states` under returned tensors for
+            more detail.
+        return_dict (`bool`, *optional*):
+            Whether or not to return a [`~utils.ModelOutput`] instead of a plain tuple.
+        pixel_values (`torch.FloatTensor` of shape `(seq_length, num_channels * image_size * image_size)):
+            The tensors corresponding to the input images. Pixel values can be obtained using
+            [`AutoImageProcessor`]. See [`Qwen2VLImageProcessor.__call__`] for details. [`Qwen2VLProcessor`] uses
+            [`Qwen2VLImageProcessor`] for processing images.
+        pixel_values_videos (`torch.FloatTensor` of shape `(seq_length, num_channels * temporal_size * image_size * image_size)):
+            The tensors corresponding to the input videos. Pixel values can be obtained using
+            [`AutoImageProcessor`]. See [`Qwen2VLImageProcessor.__call__`] for details. [`Qwen2VLProcessor`] uses
+            [`Qwen2VLImageProcessor`] for processing videos.
+        image_grid_thw (`torch.LongTensor` of shape `(num_images, 3)`, *optional*):
+            The temporal, height and width of feature shape of each image in LLM.
+        video_grid_thw (`torch.LongTensor` of shape `(num_videos, 3)`, *optional*):
+            The temporal, height and width of feature shape of each video in LLM.
+        rope_deltas (`torch.LongTensor` of shape `(batch_size, )`, *optional*):
+            The rope index difference between sequence length and multimodal rope.
+"""
+
+@dataclass
+class Qwen2VLCausalLMOutputWithPast(ModelOutput):
+    """
+    Base class for Qwen2VL causal language model (or autoregressive) outputs.
+
+    Args:
+        loss (`torch.FloatTensor` of shape `(1,)`, *optional*, returned when `labels` is provided):
+            Language modeling loss (for next-token prediction).
+        logits (`torch.FloatTensor` of shape `(batch_size, sequence_length, config.vocab_size)`):
+            Prediction scores of the language modeling head (scores for each vocabulary token before SoftMax).
+        past_key_values (`tuple(tuple(torch.FloatTensor))`, *optional*, returned when `use_cache=True` is passed or when `config.use_cache=True`):
+            Tuple of `tuple(torch.FloatTensor)` of length `config.n_layers`, with each tuple having 2 tensors of shape
+            `(batch_size, num_heads, sequence_length, embed_size_per_head)`)
+
+            Contains pre-computed hidden-states (key and values in the self-attention blocks) that can be used (see
+            `past_key_values` input) to speed up sequential decoding.
+        hidden_states (`tuple(torch.FloatTensor)`, *optional*, returned when `output_hidden_states=True` is passed or when `config.output_hidden_states=True`):
+            Tuple of `torch.FloatTensor` (one for the output of the embeddings, if the model has an embedding layer, +
+            one for the output of each layer) of shape `(batch_size, sequence_length, hidden_size)`.
+
+            Hidden-states of the model at the output of each layer plus the optional initial embedding outputs.
+        attentions (`tuple(torch.FloatTensor)`, *optional*, returned when `output_attentions=True` is passed or when `config.output_attentions=True`):
+            Tuple of `torch.FloatTensor` (one for each layer) of shape `(batch_size, num_heads, sequence_length,
+            sequence_length)`.
+
+            Attentions weights after the attention softmax, used to compute the weighted average in the self-attention
+            heads.
+        rope_deltas (`torch.LongTensor` of shape `(batch_size, )`, *optional*):
+            The rope index difference between sequence length and multimodal rope.
+    """
+
+    loss: Optional[torch.FloatTensor] = None
+    logits: torch.FloatTensor = None
+    past_key_values: Optional[List[torch.FloatTensor]] = None
+    hidden_states: Optional[Tuple[torch.FloatTensor]] = None
+    attentions: Optional[Tuple[torch.FloatTensor]] = None
+    rope_deltas: Optional[torch.LongTensor] = None
+
+def rotate_half(x):
+    """Rotates half the hidden dims of the input."""
+    x1 = x[..., : x.shape[-1] // 2]
+    x2 = x[..., x.shape[-1] // 2 :]
+    return torch.cat((-x2, x1), dim=-1)
+
+def apply_rotary_pos_emb_vision(tensor: torch.Tensor, freqs: torch.Tensor) -> torch.Tensor:
+    orig_dtype = tensor.dtype
+    tensor = tensor.float()
+    cos = freqs.cos()
+    sin = freqs.sin()
+    cos = cos.unsqueeze(1).repeat(1, 1, 2).unsqueeze(0).float()
+    sin = sin.unsqueeze(1).repeat(1, 1, 2).unsqueeze(0).float()
+    output = (tensor * cos) + (rotate_half(tensor) * sin)
+    output = output.to(orig_dtype)
+    return output
+
+########################################## copy end #########################################
+
 
 
 def qwen_flash_attention_forward_streamingLLM(self,
@@ -1071,7 +1215,7 @@ def qwen_vl_model_forward_fastv(
                     hidden_states = hidden_states[:,keep_indexs,:]
                     if causal_mask is not None:
                         causal_mask = causal_mask[:,:,:hidden_states.shape[1],:hidden_states.shape[1]]
-                    position_ids = keep_indexs.unsqueeze(0)        # TODO  三个维度都要进行压缩
+                    position_ids = position_ids[:, :, keep_indexs]             # TODO  三个维度都要进行压缩
                     position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
 
@@ -1110,3 +1254,306 @@ def qwen_vl_model_forward_fastv(
             hidden_states=all_hidden_states,
             attentions=all_self_attns,
         )
+
+def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, grid_thw: torch.Tensor) -> torch.Tensor:
+    hidden_states = self.patch_embed(hidden_states)
+    rotary_pos_emb = self.rot_pos_emb(grid_thw)
+
+    cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
+        dim=0,
+        # Select dtype based on the following factors:
+        #  - FA2 requires that cu_seqlens_q must have dtype int32
+        #  - torch.onnx.export requires that cu_seqlens_q must have same dtype as grid_thw
+        # See https://github.com/huggingface/transformers/pull/34852 for more information
+        dtype=grid_thw.dtype if torch.jit.is_tracing() else torch.int32,
+    )
+    cu_seqlens = F.pad(cu_seqlens, (1, 0), value=0)
+
+    for blk in self.blocks:
+        if self.gradient_checkpointing and self.training:
+            hidden_states = self._gradient_checkpointing_func(
+                blk.__call__, hidden_states, cu_seqlens, rotary_pos_emb
+            )
+        else:
+            hidden_states = blk(hidden_states, cu_seqlens=cu_seqlens, rotary_pos_emb=rotary_pos_emb)
+
+    ## handle visionzip here ##
+    # current_result = self.merger(hidden_states)   # 在这里会将token_num / 4
+
+    attn_weights = self.blocks[-2].attn.attn_weights
+    num_heads, q_len, k_len = attn_weights.shape
+    assert q_len == k_len, "q_len and k_len should be the same, the error is in Qwen2VisionTransformerPretrainedModel's forward function"
+    q_len_pooled = q_len // 4
+    k_len_pooled = k_len // 4
+    attn_weights = attn_weights.view(num_heads, q_len_pooled, 4, k_len_pooled, 4)
+    attn_weights = attn_weights.mean(dim=(2, 4))
+    attention_sum = attn_weights.mean(dim=0).mean(dim=0)   # 按头和行取平均  shape[888]
+
+    hidden_states = self.blocks[-2].hidden_states
+    hidden_states = self.merger(hidden_states)    # 也得跟着merge。。。（不知道这么做是不是最优的）
+    metric = self.blocks[-2].attn.metric
+    metric = metric.view(num_heads, metric.shape[1] // 4, 4, -1)   # 也要每4个token做一下平均
+    metric = metric.mean(dim=2).mean(dim=0)   # 这里需要对每个头也做一下平均
+    total_token_num = metric.shape[0]
+    dominant_num = max(1, int(total_token_num * self.budgets * 5.4 / 6.4))
+    contextual_num = max(1, int(total_token_num * self.budgets * 1.0 / 6.4))
+    all_indices = attention_sum.topk(dominant_num, dim=0).indices   # get topk indices
+    all_indices = all_indices.sort().values
+    mask = torch.ones_like(hidden_states[:, 0], dtype=torch.bool, device=metric.device).scatter_(0, all_indices, False)  # which to delete  true is delete
+    filtered_indices = torch.where(mask)[0]  # 获取mask为True的位置(FIXME 待讨论)
+    dominant_tokens = hidden_states.masked_select(~mask.unsqueeze(-1)).view(dominant_num, hidden_states.shape[1])
+
+    metric_filtered = metric[mask].view(hidden_states.shape[0] - dominant_num, metric.shape[1])  # [589, 80]
+    hidden_states_filtered = hidden_states.masked_select(mask.unsqueeze(-1)).view(hidden_states.shape[0] - dominant_num, hidden_states.shape[1])  # [589, 3584]
+    metric_normalized = metric_filtered / metric_filtered.norm(dim=-1, keepdim=True) 
+
+    ## Start merge
+    step = max(1, metric_normalized.shape[0] // contextual_num)
+    target_indices = torch.arange(0, metric_normalized.shape[0], step, device=metric_normalized.device)[:contextual_num]  # 均匀采样
+    contextual_indices = filtered_indices[target_indices]   # 获取merge token的原始下标（FIXME 待讨论）
+    target_tokens = metric_normalized[target_indices, :]  # [55, 80]  
+
+    tokens_to_merge = metric_normalized[~torch.isin(torch.arange(metric_normalized.shape[0], device=metric_normalized.device), target_indices), :]   # [534,80]
+    similarity = torch.matmul(tokens_to_merge.float(), target_tokens.transpose(0, 1).float())   # FIXME  change here
+    assign_one_hot = torch.zeros(tokens_to_merge.shape[0], contextual_num, dtype=hidden_states_filtered.dtype, device=metric_normalized.device)
+    assign_one_hot.scatter_(1, similarity.argmax(dim=1).unsqueeze(-1), 1)
+    counts = assign_one_hot.sum(dim=0).clamp(min=1).unsqueeze(-1)       # 计算每个聚类中心分配到的token的数量
+    hidden_to_merge = hidden_states_filtered[~torch.isin(torch.arange(hidden_states_filtered.shape[0], device=hidden_states_filtered.device), target_indices), :]
+    aggregated_hidden = (torch.matmul(assign_one_hot.transpose(0, 1).float(), hidden_to_merge.float()) / counts).to(torch.bfloat16) # FIXME  change here
+    target_hidden = hidden_states_filtered[target_indices, :] 
+    
+    contextual_tokens = target_hidden + aggregated_hidden
+
+    # Merge with target hidden states and concatenate
+    # hidden_states_save = torch.cat([dominant_tokens, contextual_tokens], dim=0).to(hidden_states.dtype)
+    # FIXME 重新修改了cat逻辑，按照两部分实际的位置进行concat。待讨论
+    all_keep_indices = torch.cat([all_indices, contextual_indices])
+    all_keep_indices = all_keep_indices.sort().values  # 按位置排序
+
+    # 创建结果tensor
+    hidden_states_save = torch.zeros(
+        (len(all_keep_indices), hidden_states.shape[1]), 
+        dtype=hidden_states.dtype,
+        device=hidden_states.device
+    )
+
+    # 创建映射字典,标记每个位置是dominant还是contextual token
+    dominant_mask = torch.zeros(len(all_keep_indices), dtype=torch.bool, device=hidden_states.device)
+    dominant_mask = torch.isin(all_keep_indices, all_indices)
+
+    # 填充dominant tokens
+    dominant_positions = torch.where(dominant_mask)[0]
+    hidden_states_save[dominant_positions] = dominant_tokens
+
+    # 填充contextual tokens 
+    contextual_positions = torch.where(~dominant_mask)[0]
+    hidden_states_save[contextual_positions] = contextual_tokens
+
+    return hidden_states_save, all_keep_indices
+
+def qwen2vl_vision_flash_attention2_forward_visionzip(self, hidden_states: torch.Tensor, cu_seqlens: torch.Tensor, rotary_pos_emb: torch.Tensor = None
+    ) -> torch.Tensor:
+        if self.layer_idx == 30:
+            self.metric = None
+            self.attention_weights = None
+
+        seq_length = hidden_states.shape[0]
+        q, k, v = self.qkv(hidden_states).reshape(seq_length, 3, self.num_heads, -1).permute(1, 0, 2, 3).unbind(0)
+        q = apply_rotary_pos_emb_vision(q.unsqueeze(0), rotary_pos_emb).squeeze(0)   # seq_len, num_heads, head_dim
+        k = apply_rotary_pos_emb_vision(k.unsqueeze(0), rotary_pos_emb).squeeze(0)
+
+        if self.layer_idx == 30:   # HACK mimic eager attention to get the attention weights
+            k_here = k.transpose(0, 1)   # [num_heads, seq_len, head_dim]
+            self.metric = k_here
+            q_here = q.transpose(0, 1)
+            attention_mask_here = torch.full(
+            [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
+            )
+            for i in range(1, len(cu_seqlens)):
+                attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0  # 防止不同image之间相互关注
+            attn_weights_here = torch.matmul(q_here, k_here.transpose(1, 2)) / math.sqrt(q.shape[-1])   # [num_heads, seq_len, seq_len]
+            attn_weights_here = attn_weights_here + attention_mask_here
+            attn_weights_here = nn.functional.softmax(attn_weights_here, dim=-1, dtype=torch.float32)
+            self.attn_weights = attn_weights_here
+            del k_here, q_here, attention_mask_here, attn_weights_here
+
+        max_seqlen = (cu_seqlens[1:] - cu_seqlens[:-1]).max().item()
+        attn_output = flash_attn_varlen_func(q, k, v, cu_seqlens, cu_seqlens, max_seqlen, max_seqlen).reshape(
+            seq_length, -1
+        )
+        attn_output = self.proj(attn_output)
+        return attn_output
+
+
+# HACK rewrite the function only to store the hidden_states
+def qwen2vl_vision_block_forward_visionzip(self, hidden_states, cu_seqlens, rotary_pos_emb) -> torch.Tensor:
+        if self.layer_idx == 30:
+            self.hidden_states = None
+
+        hidden_states = hidden_states + self.attn(
+            self.norm1(hidden_states), cu_seqlens=cu_seqlens, rotary_pos_emb=rotary_pos_emb
+        )
+        hidden_states = hidden_states + self.mlp(self.norm2(hidden_states))
+
+        if self.layer_idx == 30:
+            self.hidden_states = hidden_states
+
+        return hidden_states
+
+
+def qwen2vl_generation_forward_visionzip(
+    self,
+    input_ids: torch.LongTensor = None,
+    attention_mask: Optional[torch.Tensor] = None,
+    position_ids: Optional[torch.LongTensor] = None,
+    past_key_values: Optional[List[torch.FloatTensor]] = None,
+    inputs_embeds: Optional[torch.FloatTensor] = None,
+    labels: Optional[torch.LongTensor] = None,
+    use_cache: Optional[bool] = None,
+    output_attentions: Optional[bool] = None,
+    output_hidden_states: Optional[bool] = None,
+    return_dict: Optional[bool] = None,
+    pixel_values: Optional[torch.Tensor] = None,
+    pixel_values_videos: Optional[torch.FloatTensor] = None,
+    image_grid_thw: Optional[torch.LongTensor] = None,
+    video_grid_thw: Optional[torch.LongTensor] = None,
+    rope_deltas: Optional[torch.LongTensor] = None,
+    cache_position: Optional[torch.LongTensor] = None,
+) -> Union[Tuple, Qwen2VLCausalLMOutputWithPast]:
+    
+    output_attentions = output_attentions if output_attentions is not None else self.config.output_attentions
+    output_hidden_states = (
+        output_hidden_states if output_hidden_states is not None else self.config.output_hidden_states
+    )
+    return_dict = return_dict if return_dict is not None else self.config.use_return_dict
+
+    if inputs_embeds is None:
+        inputs_embeds = self.model.embed_tokens(input_ids)
+        if pixel_values is not None:  # prefill stage
+            pixel_values = pixel_values.type(self.visual.get_dtype())
+            image_embeds, all_indices = self.visual(pixel_values, grid_thw=image_grid_thw)   # change here
+            n_image_tokens = image_embeds.shape[0]   # change here
+            total_len = input_ids.shape[-1]   # 原本的总长度
+            assert input_ids.shape[0] == 1, 'visionzip only support single batch, assert is in qwen2vl_generation_forward_visionzip function'
+            position_image_begin_token = (input_ids[0] == 151652).nonzero(as_tuple=True)[0]
+            before_idx = position_image_begin_token[0].item() + 1   # before image length
+            before_img = input_ids[:, :before_idx]
+            position_image_end_token = (input_ids[0] == 151653).nonzero(as_tuple=True)[0]
+            post_idx = position_image_end_token[-1].item() 
+            post_img = input_ids[:, post_idx:]
+            img_tensor = torch.full(
+                (input_ids.shape[0], n_image_tokens), 
+                self.config.image_token_id, 
+                dtype=input_ids.dtype, 
+                device=input_ids.device
+            )
+            origin_input_ids = deepcopy(input_ids)   # HACK deepcopy to calculate position_ids with origin_input_ids 
+            input_ids = torch.cat((before_img, img_tensor, post_img), dim=1)   # 重新拼接
+            all_indices = all_indices + before_idx  # 重新计算图片偏移
+            all_indices = torch.cat((torch.arange(0, before_idx, device=all_indices.device), all_indices, torch.arange(post_idx, total_len, device=all_indices.device)))   # 留下的token的下标
+            inputs_embeds = inputs_embeds[:, all_indices, :]
+
+            
+            image_mask = (
+                (input_ids == self.config.image_token_id)
+                .unsqueeze(-1)
+                .expand_as(inputs_embeds)
+                .to(inputs_embeds.device)
+            )
+            image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)   # 151655
+            inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
+
+            text_image_mask = (input_ids != 151655)   # HACK  change here to get image_mask(image position is false, else is true)
+            self.base_model.text_image_mask = text_image_mask
+            for layer in self.base_model.layers:
+                    layer.self_attn.text_image_mask = text_image_mask
+
+        if pixel_values_videos is not None:
+            pixel_values_videos = pixel_values_videos.type(self.visual.get_dtype())
+            video_embeds = self.visual(pixel_values_videos, grid_thw=video_grid_thw)
+            n_video_tokens = (input_ids == self.config.video_token_id).sum().item()
+            n_video_features = video_embeds.shape[0]
+            if n_video_tokens != n_video_features:
+                raise ValueError(
+                    f"Video features and video tokens do not match: tokens: {n_video_tokens}, features {n_video_features}"
+                )
+            video_mask = (
+                (input_ids == self.config.video_token_id)
+                .unsqueeze(-1)
+                .expand_as(inputs_embeds)
+                .to(inputs_embeds.device)
+            )
+            video_embeds = video_embeds.to(inputs_embeds.device, inputs_embeds.dtype)
+            inputs_embeds = inputs_embeds.masked_scatter(video_mask, video_embeds)
+
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(inputs_embeds.device)
+
+    # if we get 4D attention mask we cannot calculate rope deltas anymore. TODO @raushan fixme
+    if position_ids is None and input_ids is not None and (attention_mask is None or attention_mask.ndim == 2):
+        # calculate RoPE index once per generation in the pre-fill stage only
+        if (cache_position is not None and cache_position[0] == 0) or self.rope_deltas is None:
+            position_ids, rope_deltas = self.get_rope_index(
+                origin_input_ids, image_grid_thw, video_grid_thw, attention_mask
+            )
+            self.rope_deltas = rope_deltas
+
+            ######### post handle #########
+            position_ids = position_ids[:, all_indices]    # because we don't prune text token, so we don't need to change rope_deltas
+            attention_mask = attention_mask[:, all_indices, :]
+
+
+        # then use the prev pre-calculated rope-deltas to get the correct position ids
+        else:   # deocde stage
+            batch_size, seq_length, _ = inputs_embeds.shape
+            delta = cache_position[0] + self.rope_deltas if cache_position is not None else 0
+            position_ids = torch.arange(seq_length, device=inputs_embeds.device)
+            position_ids = position_ids.view(1, -1).expand(batch_size, -1)
+            if cache_position is not None:  # otherwise `deltas` is an int `0`
+                delta = delta.repeat_interleave(batch_size // delta.shape[0], dim=0)
+            position_ids = position_ids.add(delta)
+            position_ids = position_ids.unsqueeze(0).expand(3, -1, -1)
+
+    outputs = self.model(
+        input_ids=None,
+        position_ids=position_ids,
+        attention_mask=attention_mask,
+        past_key_values=past_key_values,
+        inputs_embeds=inputs_embeds,
+        use_cache=use_cache,
+        output_attentions=output_attentions,
+        output_hidden_states=output_hidden_states,
+        return_dict=return_dict,
+        cache_position=cache_position,
+    )
+
+    hidden_states = outputs[0]
+    logits = self.lm_head(hidden_states)
+
+    loss = None
+    if labels is not None:
+        # Upcast to float if we need to compute the loss to avoid potential precision issues
+        logits = logits.float()
+        # Shift so that tokens < n predict n
+        shift_logits = logits[..., :-1, :].contiguous()
+        shift_labels = labels[..., 1:].contiguous()
+        # Flatten the tokens
+        loss_fct = CrossEntropyLoss()
+        shift_logits = shift_logits.view(-1, self.config.vocab_size)
+        shift_labels = shift_labels.view(-1)
+        # Enable model parallelism
+        shift_labels = shift_labels.to(shift_logits.device)
+        loss = loss_fct(shift_logits, shift_labels)
+
+    if not return_dict:
+        output = (logits,) + outputs[1:]
+        return (loss,) + output if loss is not None else output
+
+    return Qwen2VLCausalLMOutputWithPast(
+        loss=loss,
+        logits=logits,
+        past_key_values=outputs.past_key_values,
+        hidden_states=outputs.hidden_states,
+        attentions=outputs.attentions,
+        rope_deltas=self.rope_deltas,
+    )
