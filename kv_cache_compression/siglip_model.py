@@ -163,7 +163,7 @@ def siglip_vision_tower_forward(self, images):
         # all_indices = torch.cat([torch.zeros((hidden_states.shape[0], 1), dtype=topk_indices.dtype, device=topk_indices.device), topk_indices], dim=1)
         
         all_indices = attention_sum.topk(dominant_num, dim=1).indices
-        mask = torch.ones_like(hidden_states[:, :, 0], dtype=torch.bool, device=metric.device).scatter_(1, all_indices, False)  # [3, 729]
+        mask = torch.ones_like(hidden_states[:, :, 0], dtype=torch.bool, device=metric.device).scatter_(1, all_indices, False)  # [3, 729]  哪些需要被删掉
         dominant_tokens = hidden_states.masked_select(~mask.unsqueeze(-1)).view(hidden_states.shape[0], dominant_num, hidden_states.shape[2])
         
         ### Filter
