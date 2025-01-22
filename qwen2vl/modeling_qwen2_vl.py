@@ -308,7 +308,7 @@ class PatchMerger(nn.Module):
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.mlp(self.ln_q(x).view(-1, self.hidden_size))
+        x = self.mlp(self.ln_q(x).view(-1, self.hidden_size))  
         return x
 
 
@@ -1027,7 +1027,7 @@ class Qwen2VisionTransformerPretrainedModel(Qwen2VLPreTrainedModel):
         hidden_states = self.patch_embed(hidden_states)
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
 
-        cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(
+        cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(  #[0，0+第一张图片的grid总数， 0 + 第一张图片的grid总数 + 第二张图片的grid总数， 0 + 第一张图片的grid总数 + 第二张图片的grid总数 + 第三张图片的grid总数]
             dim=0,
             # Select dtype based on the following factors:
             #  - FA2 requires that cu_seqlens_q must have dtype int32
@@ -1045,7 +1045,7 @@ class Qwen2VisionTransformerPretrainedModel(Qwen2VLPreTrainedModel):
             else:
                 hidden_states = blk(hidden_states, cu_seqlens=cu_seqlens, rotary_pos_emb=rotary_pos_emb)
 
-        return self.merger(hidden_states)
+        return self.merger(hidden_states)  # [1000, 1120]    [16, 1000, 1000]    [250, 3584]
 
 
 @add_start_docstrings(

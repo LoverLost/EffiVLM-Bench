@@ -241,7 +241,7 @@ class Qwen2_VL_with_kvcache(lmms):
                         base64_image.save(buffer, format="JPEG")
                         base64_bytes = base64.b64encode(buffer.getvalue())
                         base64_string = base64_bytes.decode("utf-8")
-                        message.append({"role": "user", "content": [{"type": "image", "image": f"data:image/jpeg;base64,{base64_string}"}, {"type": "text", "text": context}]})
+                        message.append({"role": "user", "content": [{"type": "image", "image": f"data:image/jpeg;base64,{base64_string}", "max_pixels": self.max_pixels, "min_pixels": self.min_pixels}, {"type": "text", "text": context}]})
                     elif isinstance(visual, (list, tuple)) and all(isinstance(v, Image.Image) for v in visual):  # Multiple images
                         image_content = []
                         for v in visual:
@@ -250,11 +250,11 @@ class Qwen2_VL_with_kvcache(lmms):
                             base64_image.save(buffer, format="JPEG")
                             base64_bytes = base64.b64encode(buffer.getvalue())
                             base64_string = base64_bytes.decode("utf-8")
-                            image_content.append({"type": "image", "image": f"data:image/jpeg;base64,{base64_string}"})
-                        message.append({"role": "user", "content": image_content + [{"type": "text", "text": context}]})
+                            image_content.append({"type": "image", "image": f"data:image/jpeg;base64,{base64_string}", "max_pixels": self.max_pixels, "min_pixels": self.min_pixels})
+                        message.append({"role": "user", "content": image_content + [{"type": "text", "text": context}], "max_pixels": self.max_pixels, "min_pixels": self.min_pixels})
                     else:
-                        message.append({"role": "user", "content": [{"type": "text", "text": context}]})
-                else:
+                        message.append({"role": "user", "content": [{"type": "text", "text": context}], "max_pixels": self.max_pixels, "min_pixels": self.min_pixels})
+                else:   # text only
                     message.append({"role": "user", "content": [{"type": "text", "text": context}]})
 
                 messages.append(message)

@@ -1285,7 +1285,7 @@ def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, gr
     assert q_len == k_len, "q_len and k_len should be the same, the error is in Qwen2VisionTransformerPretrainedModel's forward function"
     q_len_pooled = q_len // 4
     k_len_pooled = k_len // 4
-    attn_weights = attn_weights.view(num_heads, q_len_pooled, 4, k_len_pooled, 4)
+    attn_weights = attn_weights.view(num_heads, q_len_pooled, 4, k_len_pooled, 4)  
     attn_weights = attn_weights.mean(dim=(2, 4))
     attention_sum = attn_weights.mean(dim=0).mean(dim=0)   # 按头和行取平均  shape[888]
 
@@ -1366,7 +1366,7 @@ def qwen2vl_vision_flash_attention2_forward_visionzip(self, hidden_states: torch
             k_here = k.transpose(0, 1)   # [num_heads, seq_len, head_dim]
             self.metric = k_here
             q_here = q.transpose(0, 1)
-            attention_mask_here = torch.full(
+            attention_mask_here = torch.full(  # 手动算的mask，用-inf填充
             [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
             )
             for i in range(1, len(cu_seqlens)):
@@ -1393,7 +1393,7 @@ def qwen2vl_vision_block_forward_visionzip(self, hidden_states, cu_seqlens, rota
         hidden_states = hidden_states + self.attn(
             self.norm1(hidden_states), cu_seqlens=cu_seqlens, rotary_pos_emb=rotary_pos_emb
         )
-        hidden_states = hidden_states + self.mlp(self.norm2(hidden_states))
+        hidden_states = hidden_states + self.mlp(self.norm2(hidden_states)) 
 
         if self.layer_idx == 30:
             self.hidden_states = hidden_states
