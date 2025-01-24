@@ -13,9 +13,26 @@ from .qwen_model import (
     qwen_attention_forward_random
 )
 
+from .qwen_model import (
+    qwen_flash_attention_forward_streamingLLM,
+    qwen_flash_attention_forward_H2O,
+    qwen_flash_attention_forward_PyramidKV,
+    qwen_flash_attention_forward_random,
+    qwen_flash_attention_forward_snapkv,
+    qwen_flash_attention_forward_look_m,
+)
+
 from .kv_cache_utils import VlCacheKVCluster
 from .siglip_model import *
-
+import qwen2vl
+from .qwen2vl_model import (
+    qwen_vl_model_forward_fastv,
+    qwen_vl_flash_attention_forward_fastv,
+    qwen2vl_vision_flash_attention2_forward_visionzip,
+    qwen2vl_vision_tower_forward_visionzip,
+    qwen2vl_vision_block_forward_visionzip,
+    qwen2vl_generation_forward_visionzip
+)
 
 def replace_qwen(args, method):
 
@@ -107,6 +124,7 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = getattr(args, 'budgets', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_random
     
+
     elif method == 'prumerge+':
         print('using prumerge+')
         from llava.model.multimodal_encoder.siglip_encoder import SigLipVisionTower
@@ -118,8 +136,97 @@ def replace_qwen(args, method):
         LlavaMetaForCausalLM.encode_images_prumerge_plus_simple = encode_images_prumerge_plus_simple
         LlavaQwenForCausalLM.prepare_inputs_labels_for_multimodal = prepare_inputs_labels_for_multimodal_prumerge_plus
 
+
+    elif method == 'sparsevlm':
+        print('using sparsevlm')
+        from llava.model.language_model.llava_qwen import LlavaQwenForCausalLM
+        from llava.model.language_model.sparse_llava_qwen import LlavaQwenSparseForCausalLM
+        from llava.model.language_model.sparse_modeling_qwen import Qwen2SparseModel
+        LlavaQwenSparseForCausalLM.bias = 0
+        LlavaQwenSparseForCausalLM.scale = 13.5
+        Qwen2SparseModel.ratio = getattr(args, 'r', None)
+
+    
         
         
+        
+def replace_qwen2vl(args, method):
+     
+    if method == 'streamingllm':
+        print('using streamingllm')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.forward = qwen_attention_forward_streamingLLM
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_streamingLLM
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = args.budgets
+    
+    elif method == "h2o":
+        print('using h2o')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.forward = qwen_attention_forward_H2O
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.h2o_head_adaptive = args.h2o_head_adaptive
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_H2O
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.h2o_head_adaptive = args.h2o_head_adaptive
+        
+    elif method == 'snapkv':
+        print('using snapkv')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.forward = qwen_attention_forward_snapkv
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.snapkv_head_adaptive = args.snapkv_head_adaptive
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.pooling = args.pooling
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_snapkv
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.snapkv_head_adaptive = args.snapkv_head_adaptive
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.pooling = args.pooling
+        
+    elif method == 'pyramidkv':
+        print('using pyramidkv')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.forward = qwen_attn_forward_PyramidKV
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.pyramidkv_head_adaptive = args.pyramidkv_head_adaptive
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.pooling = args.pooling
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_PyramidKV
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.pyramidkv_head_adaptive = args.pyramidkv_head_adaptive
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.pooling = args.pooling
+    
+    elif method == 'random':
+        print('using random')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.budgets = getattr(args, 'budgets', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.forward = qwen_attention_forward_random
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = getattr(args, 'budgets', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_random
+
+    elif method == 'look-m':
+        print('using look-m')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budget = getattr(args, 'budgets', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.merge = getattr(args, 'merge', False)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.hh_ratio = getattr(args, 'hh_ratio', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLAttention.recent_ratio = getattr(args, 'recent_ratio', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_look_m
+
+    elif method == 'fastv':
+        print('using fastv')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLModel.forward = qwen_vl_model_forward_fastv
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_vl_flash_attention_forward_fastv
+        qwen2vl.modeling_qwen2_vl.Qwen2VLModel.target_layer_idx = getattr(args, 'target_layer_idx', 2)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.target_layer_idx = getattr(args, 'target_layer_idx', 2)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLModel.budgets = getattr(args, 'budgets', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLModel.origin = getattr(args, 'origin', False)
+
+    elif method == 'visionzip':
+        print('using visionzip')
+        qwen2vl.modeling_qwen2_vl.VisionFlashAttention2.forward = qwen2vl_vision_flash_attention2_forward_visionzip
+        qwen2vl.modeling_qwen2_vl.Qwen2VisionTransformerPretrainedModel.forward = qwen2vl_vision_tower_forward_visionzip
+        qwen2vl.modeling_qwen2_vl.Qwen2VLVisionBlock.forward = qwen2vl_vision_block_forward_visionzip
+        qwen2vl.modeling_qwen2_vl.Qwen2VisionTransformerPretrainedModel.budgets = getattr(args, 'budgets', 0.01)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLForConditionalGeneration.forward = qwen2vl_generation_forward_visionzip
+
+
+    
+
+         
+     
 def replace_mistral(method):
     pass
 

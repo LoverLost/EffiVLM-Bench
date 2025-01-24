@@ -17,12 +17,15 @@ conda activate test1225
 cd /share/home/mhma/MLLM-Efficiency
 
 python3 -m accelerate.commands.launch \
-    --num_processes=1 \
+    --num_processes=2 \
     -m lmms_eval \
-    --model llava_onevision_with_kvcache \
-    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=streamingllm,budgets=0.1 \
-    --tasks chartqa  \
+    --model llava_onevision \
+    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov\
+    --tasks mathvista  \
     --batch_size 1 \
     --log_samples \
-    --log_samples_suffix chartqa \
-    --output_path ./logs/chartqa/
+    --log_samples_suffix mathvista \
+    --output_path ./logs/mathvista/
+
+
+    gpt_eval_model_name

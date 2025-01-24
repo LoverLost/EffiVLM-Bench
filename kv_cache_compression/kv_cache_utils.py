@@ -15,6 +15,7 @@ from flash_attention_softmax_n import softmax_n
 def key_pruner_query_driven(kv_states, q_states, recent_size=128, ratio=0.3):
     _, _, seqlen, head_dim = kv_states.shape
     k = max(1, int(head_dim * ratio))
+    k = max(1, int(head_dim * ratio))
     # new efficient implementation
     queries_norm = torch.pow(q_states[..., -32:, :], 2).mean(dim=2)
     keys_norm = torch.pow(kv_states, 2).mean(dim=2)
@@ -219,7 +220,7 @@ class StreamingLLMKVCluster():
 
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups):
 
-        bsz, num_heads, q_len, head_dim = query_states.shape
+        bsz, num_kv_heads, q_len, head_dim = key_states.shape
 
         if q_len < self.max_capacity_prompt:
             return key_states, value_states
@@ -227,7 +228,7 @@ class StreamingLLMKVCluster():
             indices = torch.tensor(range(
                 self.max_capacity_prompt - self.window_size), dtype=torch.int64).to(key_states.device)
             indices = indices.unsqueeze(0).unsqueeze(
-                0).unsqueeze(-1).repeat(bsz, num_heads, 1, head_dim)
+                0).unsqueeze(-1).repeat(bsz, num_kv_heads, 1, head_dim)
 
             if self.merge is not None:
                 key_states, value_states = merge_kv(
@@ -281,8 +282,12 @@ class H2OKVCluster():
         #     diagonal=1,
         # )
         # attn_weights[:, :, -self.window_size:, -self.window_size:] += mask
-
-        attn_weights += attention_mask
+        mask = torch.triu(
+            torch.ones((q_len, q_len), dtype=torch.bool, device=query_states.device),
+            diagonal=1
+        )
+        attn_weights = attn_weights.masked_fill(mask, float('-inf'))
+        del mask
         attn_weights = nn.functional.softmax(
             attn_weights, dim=-1, dtype=torch.float32)
         attn_weights = attn_weights.view(
@@ -299,6 +304,8 @@ class H2OKVCluster():
             self.max_capacity_prompt - self.window_size, dim=-1).indices
         indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
 
+        del attn_weights
+        
         k_past_compress = key_states[:, :, :-
                                      self.window_size, :].gather(dim=2, index=indices)
         v_past_compress = value_states[:, :, :-
@@ -578,15 +585,28 @@ class LOOK_MCluster():
     # attn_score_cache是[bsz, num_heads, new_seq_len, total_seq_len]
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups, text_mask, head_dim, dropout, training, origin_key_states, origin_value_states, merge=True):
         assert len(text_mask) == 1, '当前只能处理一个batch'
+        
+        q_len = query_states.shape[-2]
+        if key_states is None:
+            key_states = repeat_kv(origin_key_states, num_key_value_groups)
 
         attn_score_cache = torch.matmul(
             query_states.float(), key_states.transpose(2, 3).float()) / math.sqrt(head_dim)
-        if attention_mask is not None:  # no matter the length, we just slice it
-            causal_mask = attention_mask[:, :, :, : key_states.shape[-2]]
-            attn_score_cache = attn_score_cache + causal_mask
+
+        if attention_mask is None:
+            mask = torch.triu(
+            torch.ones((q_len, q_len), dtype=torch.bool, device=query_states.device),
+            diagonal=1
+        )
+            attn_score_cache = attn_score_cache.masked_fill(mask, float('-inf'))
+            del mask        
+        else:
+            attn_score_cache = attn_score_cache + attention_mask
+            del attention_mask
         attn_score_cache = nn.functional.softmax(
-            attn_score_cache, dim=-1, dtype=torch.float32).to(query_states.dtype)
-        attn_score_cache = nn.functional.dropout(
+            attn_score_cache, dim=-1, dtype=torch.float32)
+        if dropout is not None:
+            attn_score_cache = nn.functional.dropout(
             attn_score_cache, p=dropout, training=training)
 
         # if self.hh_ratio is not None and attn_score_cache.shape[-2]>1:  # 判断new_seq_len是否大于1，即是否是prefill阶段
@@ -597,15 +617,8 @@ class LOOK_MCluster():
 
         # self.get_importance(attn_score_cache)
 
-        if self.layer_idx == 0:
-            device_id = torch.cuda.current_device()
-            # print('*'*30)
-            # print(f'正在处理kv cache, 设备id为: {device_id}')
-            # print('原始长度为： ', end='')
-            # print(attn_score_cache.shape[-1])
-            # print('*'*30)
-
         self.update(attn_score_cache)
+        del attn_score_cache
         # [bsz, num_kv_heads, seq_len, kv_head_dim]
         seq_len = origin_key_states.size(self.k_seq_dim)
 
@@ -688,6 +701,7 @@ class LOOK_MCluster():
         #     print('*'*30)
 
         return k_hh_recent, v_hh_recent, None, None    # 最后多加了两个参数，为了分析用
+
 
 
 class SnapKVCluster():
@@ -1141,7 +1155,7 @@ class RandomCluster():
         bsz, num_heads, seq_len, head_dim = origin_key_states.shape
         window_size = max(1, int(seq_len * self.budgets * 0.1))
         other_size = max(1, int(seq_len * self.budgets * 0.9))
-        
+
         select_from_len = seq_len - window_size
 
         # 为每个batch和每个head生成随机索引，并排序以保持相对位置
@@ -1158,13 +1172,12 @@ class RandomCluster():
         
         # 扩展indices以匹配head_dim维度
         indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
-        
+
         # 使用gather收集选中的token
         selected_key_states = torch.gather(origin_key_states, dim=2, index=indices)
         selected_value_states = torch.gather(origin_value_states, dim=2, index=indices)
-        
-        return selected_key_states, selected_value_states
 
+        return selected_key_states, selected_value_states
 
 
 def init_StreamingLLM(self,
