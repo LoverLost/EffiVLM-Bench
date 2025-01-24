@@ -282,10 +282,12 @@ class H2OKVCluster():
         #     diagonal=1,
         # )
         # attn_weights[:, :, -self.window_size:, -self.window_size:] += mask
-        if attention_mask is None:
-            attention_mask = torch.triu(torch.full((q_len,q_len),float('-inf')),diagonal=1).to(dtype=torch.float32,device=attn_weights.device)
-        attn_weights += attention_mask
-        del attention_mask
+        mask = torch.triu(
+            torch.ones((q_len, q_len), dtype=torch.bool, device=query_states.device),
+            diagonal=1
+        )
+        attn_weights = attn_weights.masked_fill(mask, float('-inf'))
+        del mask
         attn_weights = nn.functional.softmax(
             attn_weights, dim=-1, dtype=torch.float32)
         attn_weights = attn_weights.view(
@@ -592,9 +594,15 @@ class LOOK_MCluster():
             query_states.float(), key_states.transpose(2, 3).float()) / math.sqrt(head_dim)
 
         if attention_mask is None:
-            attention_mask = torch.triu(torch.full((q_len,q_len),float('-inf')),diagonal=1).to(dtype=torch.float32,device=attn_score_cache.device)
-        attn_score_cache = attn_score_cache + attention_mask
-        del attention_mask
+            mask = torch.triu(
+            torch.ones((q_len, q_len), dtype=torch.bool, device=query_states.device),
+            diagonal=1
+        )
+            attn_score_cache = attn_score_cache.masked_fill(mask, float('-inf'))
+            del mask        
+        else:
+            attn_score_cache = attn_score_cache + attention_mask
+            del attention_mask
         attn_score_cache = nn.functional.softmax(
             attn_score_cache, dim=-1, dtype=torch.float32)
         if dropout is not None:
