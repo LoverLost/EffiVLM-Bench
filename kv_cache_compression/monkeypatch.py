@@ -124,6 +124,7 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = getattr(args, 'budgets', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_random
     
+
     elif method == 'prumerge+':
         print('using prumerge+')
         from llava.model.multimodal_encoder.siglip_encoder import SigLipVisionTower

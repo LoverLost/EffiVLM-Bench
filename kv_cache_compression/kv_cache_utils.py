@@ -282,8 +282,10 @@ class H2OKVCluster():
         #     diagonal=1,
         # )
         # attn_weights[:, :, -self.window_size:, -self.window_size:] += mask
-
+        if attention_mask is None:
+            attention_mask = torch.triu(torch.full((q_len,q_len),float('-inf')),diagonal=1).to(dtype=torch.float32,device=attn_weights.device)
         attn_weights += attention_mask
+        del attention_mask
         attn_weights = nn.functional.softmax(
             attn_weights, dim=-1, dtype=torch.float32)
         attn_weights = attn_weights.view(

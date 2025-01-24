@@ -479,7 +479,11 @@ def qwen_flash_attention_forward_H2O(self,
     ):
     bsz, q_len, _ = hidden_states.size()
     if q_len > 1:
-        init_H2O(self, q_len, self.h2o_head_adaptive, budgets=self.budgets)
+        init_H2O(self, 
+                 q_len,
+                 budgets=self.budgets,
+                 head_adaptive=self.h2o_head_adaptive,
+                 )
         self.kv_seq_len = 0
     
     query_states = self.q_proj(hidden_states)
@@ -597,7 +601,6 @@ def qwen_flash_attention_forward_H2O(self,
     if not output_attentions:
         attn_weights = None
     return attn_output, attn_weights, past_key_value
-
 
 
 def qwen_attention_forward_vlcache(
@@ -2155,7 +2158,7 @@ def qwen_flash_attention_forward_random(self,
         
         if key_states.shape[-2] == kv_seq_len: 
             self.kv_seq_len = kv_seq_len 
-            key_states_compress, value_states_compress = self.kv_cluster.update_kv(key_states, query_states, value_states, attention_mask, self.num_key_value_groups)
+            key_states_compress, value_states_compress = self.kv_cache.update_kv(key_states, value_states)
             past_key_value.update(key_states_compress, value_states_compress, self.layer_idx, cache_kwargs)
         else:
             self.kv_seq_len += q_len
