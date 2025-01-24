@@ -62,8 +62,6 @@ scripts/
 /data
 *.yaml
 *.out
-
-*.sh
 models/prune
 models/quant
 models/upload.py
