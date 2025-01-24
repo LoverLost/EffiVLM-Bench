@@ -114,8 +114,18 @@ def replace_qwen(args, method):
         print('using random')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = getattr(args, 'budgets', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_random
-    
-        
+
+    elif method == 'prumerge+':
+        print('using prumerge+')
+        from llava.model.multimodal_encoder.siglip_encoder import SigLipVisionTower
+        from llava.model.language_model.llava_qwen import LlavaQwenForCausalLM
+        from llava.model.llava_arch import LlavaMetaForCausalLM
+        SigLipVisionTower.budgets = getattr(args, 'budgets', None)
+        SigLipVisionTower.forward = siglip_vision_tower_forward_prumerge_plus
+        LlavaMetaForCausalLM.encode_images_prumerge_plus = encode_images_prumerge_plus
+        LlavaMetaForCausalLM.encode_images_prumerge_plus_simple = encode_images_prumerge_plus_simple
+        LlavaQwenForCausalLM.prepare_inputs_labels_for_multimodal = prepare_inputs_labels_for_multimodal_prumerge_plus
+
         
         
 def replace_qwen2vl(args, method):
