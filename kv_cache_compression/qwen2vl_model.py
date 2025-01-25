@@ -1499,8 +1499,8 @@ def qwen2vl_generation_forward_visionzip(
             self.rope_deltas = rope_deltas
 
             ######### post handle #########
-            position_ids = position_ids[:, all_indices]    # because we don't prune text token, so we don't need to change rope_deltas
-            attention_mask = attention_mask[:, all_indices, :]
+            position_ids = position_ids[:, :, all_indices]    # because we don't prune text token, so we don't need to change rope_deltas
+            attention_mask = attention_mask[:, all_indices]
 
 
         # then use the prev pre-calculated rope-deltas to get the correct position ids
