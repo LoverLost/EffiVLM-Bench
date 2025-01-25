@@ -1290,8 +1290,10 @@ def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, gr
     attention_sum = attn_weights.mean(dim=0).mean(dim=0)   # 按头和行取平均  shape[888]
 
     hidden_states = self.blocks[-2].hidden_states
+    self.blocks[-2].hidden_states = None
     hidden_states = self.merger(hidden_states)    # 也得跟着merge。。。（不知道这么做是不是最优的）
     metric = self.blocks[-2].attn.metric
+    self.blocks[-2].attn.metric = None
     metric = metric.view(num_heads, metric.shape[1] // 4, 4, -1)   # 也要每4个token做一下平均
     metric = metric.mean(dim=2).mean(dim=0)   # 这里需要对每个头也做一下平均
     total_token_num = metric.shape[0]
@@ -1366,13 +1368,22 @@ def qwen2vl_vision_flash_attention2_forward_visionzip(self, hidden_states: torch
             k_here = k.transpose(0, 1)   # [num_heads, seq_len, head_dim]
             self.metric = k_here
             q_here = q.transpose(0, 1)
-            attention_mask_here = torch.full(  # 手动算的mask，用-inf填充
-            [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
+            # attention_mask_here = torch.full(  # 手动算的mask，用-inf填充
+            # [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
+            # )
+            # for i in range(1, len(cu_seqlens)):
+            #     attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0  # 防止不同image之间相互关注
+            # attention_mask_here = torch.full(  # 手动算的mask，用-inf填充
+            # [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
+            # )
+            attention_mask_here = torch.full(  # 手动算的mask，用 True 填充
+                [1, seq_length, seq_length], True, dtype=torch.bool, device=q.device
             )
             for i in range(1, len(cu_seqlens)):
-                attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0  # 防止不同image之间相互关注
+                attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = False  # 防止不同image之间相互关注
             attn_weights_here = torch.matmul(q_here, k_here.transpose(1, 2)) / math.sqrt(q.shape[-1])   # [num_heads, seq_len, seq_len]
-            attn_weights_here = attn_weights_here + attention_mask_here
+            # attn_weights_here = attn_weights_here + attention_mask_here
+            attn_weights_here = attn_weights_here.masked_fill(attention_mask_here, float('-inf'))
             attn_weights_here = nn.functional.softmax(attn_weights_here, dim=-1, dtype=torch.float32)
             self.attn_weights = attn_weights_here
             del k_here, q_here, attention_mask_here, attn_weights_here
@@ -1499,8 +1510,8 @@ def qwen2vl_generation_forward_visionzip(
             self.rope_deltas = rope_deltas
 
             ######### post handle #########
-            position_ids = position_ids[:, all_indices]    # because we don't prune text token, so we don't need to change rope_deltas
-            attention_mask = attention_mask[:, all_indices, :]
+            position_ids = position_ids[:, :, all_indices]    # because we don't prune text token, so we don't need to change rope_deltas
+            attention_mask = attention_mask[:, all_indices]
 
 
         # then use the prev pre-calculated rope-deltas to get the correct position ids

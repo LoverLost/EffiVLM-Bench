@@ -587,9 +587,13 @@ class LOOK_MCluster():
         assert len(text_mask) == 1, '当前只能处理一个batch'
         
         q_len = query_states.shape[-2]
+
+        '''
+        key_states is repeated. If key_states is None, we use origin_key_states here.
+        '''
         if key_states is None:
             key_states = repeat_kv(origin_key_states, num_key_value_groups)
-
+            
         attn_score_cache = torch.matmul(
             query_states.float(), key_states.transpose(2, 3).float()) / math.sqrt(head_dim)
 

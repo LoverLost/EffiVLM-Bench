@@ -69,3 +69,12 @@ models/upload.py
 sparsegpt.sh
 test-clash.sh
 test.sh
+*.out
+*.sh
+models/prune
+models/quant
+models/upload.py
+
+sparsegpt.sh
+test-clash.sh
+test.sh
