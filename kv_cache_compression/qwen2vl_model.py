@@ -1368,13 +1368,22 @@ def qwen2vl_vision_flash_attention2_forward_visionzip(self, hidden_states: torch
             k_here = k.transpose(0, 1)   # [num_heads, seq_len, head_dim]
             self.metric = k_here
             q_here = q.transpose(0, 1)
-            attention_mask_here = torch.full(  # 手动算的mask，用-inf填充
-            [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
+            # attention_mask_here = torch.full(  # 手动算的mask，用-inf填充
+            # [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
+            # )
+            # for i in range(1, len(cu_seqlens)):
+            #     attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0  # 防止不同image之间相互关注
+            # attention_mask_here = torch.full(  # 手动算的mask，用-inf填充
+            # [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
+            # )
+            attention_mask_here = torch.full(  # 手动算的mask，用 True 填充
+                [1, seq_length, seq_length], True, dtype=torch.bool, device=q.device
             )
             for i in range(1, len(cu_seqlens)):
-                attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0  # 防止不同image之间相互关注
+                attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = False  # 防止不同image之间相互关注
             attn_weights_here = torch.matmul(q_here, k_here.transpose(1, 2)) / math.sqrt(q.shape[-1])   # [num_heads, seq_len, seq_len]
-            attn_weights_here = attn_weights_here + attention_mask_here
+            # attn_weights_here = attn_weights_here + attention_mask_here
+            attn_weights_here = attn_weights_here.masked_fill(attention_mask_here, float('-inf'))
             attn_weights_here = nn.functional.softmax(attn_weights_here, dim=-1, dtype=torch.float32)
             self.attn_weights = attn_weights_here
             del k_here, q_here, attention_mask_here, attn_weights_here
