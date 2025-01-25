@@ -26,33 +26,7 @@ python3 -m accelerate.commands.launch \
     --output_path ./logs/chatqa/snapkv/
 
 
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=4 \
-    -m lmms_eval \
-    --model llava_onevision_with_kvcache \
-    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=h2o,budgets=0.01 \
-    --tasks docvqa_test  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix chartqa \
-    --output_path ./logs/docvqa_test/h2o/
-
-python3 -m accelerate.commands.launch \
-    --main_process_port=28175 \
-    --mixed_precision=bf16 \
-    --num_processes=4 \
-    -m lmms_eval \
-    --model llava_onevision_with_kvcache \
-    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=h2o,budgets=0.05 \
-    --tasks docvqa_test  \
-    --batch_size 1 \
-    --log_samples \
-    --log_samples_suffix chartqa \
-    --output_path ./logs/docvqa_test/h2o/
-
-
+## example for sparsegpt-llava-onevision
 python3 -m accelerate.commands.launch \
     --main_process_port=28175 \
     --mixed_precision=bf16 \
@@ -86,6 +60,7 @@ python3 -m accelerate.commands.launch \
 
 
 
+## example for qwen2vl
 python3 -m accelerate.commands.launch \
     --main_process_port=28175 \
     --mixed_precision=bf16 \
@@ -143,8 +118,6 @@ python3 -m accelerate.commands.launch \
     --log_samples_suffix chartqa \
     --output_path ./logs/chartqa/qwen2vl/
 
-
-<<<<<<< HEAD
 python3 -m accelerate.commands.launch \
     --main_process_port=28175 \
     --mixed_precision=bf16 \
@@ -173,11 +146,3 @@ python3 -m accelerate.commands.launch \
     --log_samples_suffix chartqa \
     --output_path ./logs/chartqa/qwen2vl/
 
-<<<<<<< HEAD
-    
->>>>>>> bc6ea5a (code for sparsegpt)
-=======
->>>>>>> eca644b (add qwen2vl and adapted text-based methods, such as h2o, streamingLLM, SnapKV, and PyramidKV, to Qwen2VL, while verifying the data type of attention (torch.fp32) and the correctness of position_id)
-=======
-
->>>>>>> f817dd7 (use flash-attn2 on qwen2vl)

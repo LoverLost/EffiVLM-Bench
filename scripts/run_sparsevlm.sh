@@ -1,3 +1,4 @@
+
 cd
 cd clash
 ./clash -d . &
