@@ -20,6 +20,9 @@ from .qwen_model import (
     qwen_flash_attention_forward_random,
     qwen_flash_attention_forward_snapkv,
     qwen_flash_attention_forward_look_m,
+    qwen2vl_model_forward_vlcache,
+    qwen_flash_attention_forward_vlcache,
+    qwen_flash_attention_forward_CSP
 )
 
 from .kv_cache_utils import VlCacheKVCluster
@@ -31,7 +34,11 @@ from .qwen2vl_model import (
     qwen2vl_vision_flash_attention2_forward_visionzip,
     qwen2vl_vision_tower_forward_visionzip,
     qwen2vl_vision_block_forward_visionzip,
-    qwen2vl_generation_forward_visionzip
+    qwen2vl_generation_forward_visionzip,
+    qwen2vl_vision_flash_attention2_forward_prumerge_plus,
+    qwen2vl_vision_tower_forward_prumerge_plus,
+    qwen2vl_vision_block_forward_prumerge_plus,
+    qwen2vl_generation_forward_prumerge_plus
 )
 
 def replace_qwen(args, method):
@@ -222,7 +229,32 @@ def replace_qwen2vl(args, method):
         qwen2vl.modeling_qwen2_vl.Qwen2VisionTransformerPretrainedModel.budgets = getattr(args, 'budgets', 0.01)
         qwen2vl.modeling_qwen2_vl.Qwen2VLForConditionalGeneration.forward = qwen2vl_generation_forward_visionzip
 
+    elif method == "vl-cache":
+        print('using vlcache')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLModel.forward = qwen2vl_model_forward_vlcache
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_vlcache
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.vlcache_alpha_sparsity = args.budgets
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.vlcache_different_window_per_layer = args.vlcache_different_window_per_layer
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.vlcache_head_adaptive = args.vlcache_head_adaptive
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.vlcache_budget_layer_adaptive = getattr(args, 'vlcache_budget_layer_adaptive', True)
 
+    elif method == "csp":
+        print('using csp')
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_CSP
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.hh_ratio = getattr(args, 'hh_ratio', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.recent_ratio = getattr(args, 'recent_ratio', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.cross_ratio = getattr(args, 'cross_ratio', 0.1)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.kv_recent_bias = getattr(args, 'kv_recent_bias', 1)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = getattr(args, 'budgets', None)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.csp_head_adaptive = args.csp_head_adaptive
+
+    elif method == 'prumerge+':
+        print('using prumerge+')
+        qwen2vl.modeling_qwen2_vl.VisionFlashAttention2.forward = qwen2vl_vision_flash_attention2_forward_prumerge_plus
+        qwen2vl.modeling_qwen2_vl.Qwen2VisionTransformerPretrainedModel.forward = qwen2vl_vision_tower_forward_prumerge_plus
+        qwen2vl.modeling_qwen2_vl.Qwen2VLVisionBlock.forward = qwen2vl_vision_block_forward_prumerge_plus
+        qwen2vl.modeling_qwen2_vl.Qwen2VisionTransformerPretrainedModel.budgets = getattr(args, 'budgets', 0.01)
+        qwen2vl.modeling_qwen2_vl.Qwen2VLForConditionalGeneration.forward = qwen2vl_generation_forward_prumerge_plus
     
 
          
