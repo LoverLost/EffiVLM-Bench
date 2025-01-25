@@ -4,13 +4,13 @@ python3 -m accelerate.commands.launch \
     --mixed_precision=bf16 \
     --num_processes=4 \
     -m lmms_eval \
-    --model llava_onevision_with_kvcache \
-    --model_args pretrained=/share/home/mhma/models/llava-onevision-qwen2-7b-ov,method=h2o,budgets=0.2,h2o_head_adaptive=false \
+    --model internvl2_with_kvcache \
+    --model_args pretrained=/share/home/mhma/models/InternVL2_5-4B,method=streamingllm,budgets=0.2 \
     --tasks chartqa  \
     --batch_size 1 \
     --log_samples \
     --log_samples_suffix chartqa \
-    --output_path ./logs/chartqa/h2o/
+    --output_path ./logs/debug
 
 python3 -m accelerate.commands.launch \
     --main_process_port=28175 \

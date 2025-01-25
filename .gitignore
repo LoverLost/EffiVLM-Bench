@@ -69,12 +69,5 @@ models/upload.py
 sparsegpt.sh
 test-clash.sh
 test.sh
-*.out
+lmms-eval/lmms_eval/tasks
 *.sh
-models/prune
-models/quant
-models/upload.py
-
-sparsegpt.sh
-test-clash.sh
-test.sh
