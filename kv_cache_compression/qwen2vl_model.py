@@ -1290,8 +1290,10 @@ def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, gr
     attention_sum = attn_weights.mean(dim=0).mean(dim=0)   # 按头和行取平均  shape[888]
 
     hidden_states = self.blocks[-2].hidden_states
+    self.blocks[-2].hidden_states = None
     hidden_states = self.merger(hidden_states)    # 也得跟着merge。。。（不知道这么做是不是最优的）
     metric = self.blocks[-2].attn.metric
+    self.blocks[-2].attn.metric = None
     metric = metric.view(num_heads, metric.shape[1] // 4, 4, -1)   # 也要每4个token做一下平均
     metric = metric.mean(dim=2).mean(dim=0)   # 这里需要对每个头也做一下平均
     total_token_num = metric.shape[0]

@@ -44,7 +44,7 @@ class Qwen2_VL_with_kvcache(lmms):
         attn_implementation: Optional[str] = "eager",
         # max_pixels: int = 12845056,
         # max_pixels: int = 6422528,
-        max_pixels: int = 1605632,
+        max_pixels: int = 1605632,   # 2048 * 28 * 28
         min_pixels: int = 3136,
         max_num_frames: int = 32,
         method: Optional[str] = None,
