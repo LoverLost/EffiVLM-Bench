@@ -1702,7 +1702,8 @@ def qwen2vl_vision_tower_forward_prumerge_plus(self, hidden_states: torch.Tensor
             rest_Keys = torch.cat([before_i_Key, after_i_Key, non_topk_Key_norm[b,:,:].unsqueeze(0)], dim=1)
             cos_sim_matrix = torch.bmm(key_others_norm, rest_Keys.transpose(1, 2))
 
-            _, cluster_indices = torch.topk(cos_sim_matrix, k=int(32), dim=2, largest=True)
+            cos_sim_num = max(min(int(32), cos_sim_matrix.shape[2]), 1)
+            _, cluster_indices = torch.topk(cos_sim_matrix, k=cos_sim_num, dim=2, largest=True)
 
             cluster_tokens = rest_x_others[:,cluster_indices.squeeze(),:]
             weights = rest_x_others_attn[:,cluster_indices.squeeze()].unsqueeze(-1)

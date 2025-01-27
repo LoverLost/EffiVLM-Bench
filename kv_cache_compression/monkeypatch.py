@@ -149,7 +149,7 @@ def replace_qwen(args, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = getattr(
             args, 'budgets', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_random
-    
+
     elif method == 'prumerge+':
         print('using prumerge+')
         from llava.model.multimodal_encoder.siglip_encoder import SigLipVisionTower
@@ -304,8 +304,8 @@ def replace_internvl2_5(args, model, method):
 
 def replace_qwen_for_internvl(args, model, method):
 
-    modue_name = model.__class__.__module__
-    if '4B' in modue_name:
+    module = model.__class__.__module__
+    if '4B' in module:
         mod = sys.modules.get(
             'transformers_modules.InternVL2_5-4B.modeling_internvl_chat', None)
         InternVLChatModel = mod.InternVLChatModel
