@@ -304,8 +304,8 @@ def replace_internvl2_5(args, model, method):
 
 def replace_qwen_for_internvl(args, model, method):
 
-    modue_name = model.__class__.__module__
-    if '4B' in modue_name:
+    module_name = model.__class__.__module__
+    if '4B' in module_name:
         mod = sys.modules.get(
             'transformers_modules.InternVL2_5-4B.modeling_internvl_chat', None)
         InternVLChatModel = mod.InternVLChatModel
