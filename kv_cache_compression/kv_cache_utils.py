@@ -643,7 +643,11 @@ class LOOK_MCluster():
             (self.importance.shape[0], self.importance.shape[1]), 0)  # FIXME 换成了我的写法
         # anti_image_mask = [[0 if item is True else -65536 for item in my_mask[0]]]
         # True表示这个位置需要被“去掉”
-        image_mask = [False if item is True else True for item in text_mask[0]]
+        if type(text_mask[0]) == torch.Tensor:
+            text_image_mask = text_mask[0].tolist()
+        else:
+            text_image_mask = text_mask[0]
+        image_mask = [False if item is True else True for item in text_image_mask]
         make_image_less_important[:, image_mask] = -10000
         make_image_less_important = make_image_less_important.to(
             device=self.importance.device, dtype=self.importance.dtype)
@@ -654,9 +658,9 @@ class LOOK_MCluster():
             self.importance[:, :-self.recent_size], self.hh_size, dim=-1)  # keep_topk是[4, 758]
         keep_topk = keep_topk.sort().values
         # mask those keeping tok
-        self.importance.scatter_(1, keep_topk, 0)  # 沿着第1维，把所有留下的token置为0
-        self.importance[:, -self.recent_size:] = 0  # recent 一定会被留下
-        mask = self.importance >= 0  # 是个bool矩阵，true就表示留下来
+        self.importance.scatter_(1, keep_topk, 10000)  # 沿着第1维，把所有留下的token置为0
+        self.importance[:, -self.recent_size:] = 10000  # recent 一定会被留下
+        mask = self.importance == 10000  # 是个bool矩阵，true就表示留下来
         expanded_mask = mask.unsqueeze(
             0).unsqueeze(-1).expand_as(origin_key_states)    # 【1， 4， 7587， 128】
         k_hh_recent = torch.masked_select(
