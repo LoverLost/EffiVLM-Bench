@@ -710,6 +710,184 @@ class LOOK_MCluster():
 
         return k_hh_recent, v_hh_recent, None, None    # 最后多加了两个参数，为了分析用
 
+    def update_kv_only_merge_visual(self, key_states, query_states, value_states, attention_mask, num_key_value_groups, text_mask, head_dim, dropout, training, origin_key_states, origin_value_states, merge=True):
+        assert len(text_mask) == 1, '当前只能处理一个batch'
+        
+        q_len = query_states.shape[-2]
+
+        '''
+        key_states is repeated. If key_states is None, we use origin_key_states here.
+        '''
+        if key_states is None:
+            key_states = repeat_kv(origin_key_states, num_key_value_groups)
+            
+        attn_score_cache = torch.matmul(
+            query_states.float(), key_states.transpose(2, 3).float()) / math.sqrt(head_dim)
+
+        if attention_mask is None:
+            mask = torch.triu(
+            torch.ones((q_len, q_len), dtype=torch.bool, device=query_states.device),
+            diagonal=1
+        )
+            attn_score_cache = attn_score_cache.masked_fill(mask, float('-inf'))
+            del mask        
+        else:
+            attn_score_cache = attn_score_cache + attention_mask
+            del attention_mask
+        attn_score_cache = nn.functional.softmax(
+            attn_score_cache, dim=-1, dtype=torch.float32)
+        if dropout is not None:
+            attn_score_cache = nn.functional.dropout(
+            attn_score_cache, p=dropout, training=training)
+
+        self.update(attn_score_cache)
+        del attn_score_cache
+        # [bsz, num_kv_heads, seq_len, kv_head_dim]
+        seq_len = origin_key_states.size(self.k_seq_dim)
+
+        if seq_len <= self.budget:   # 直接返回
+            return origin_key_states, origin_value_states, None, None
+        
+        bsz, num_heads, _, head_dim = origin_key_states.shape
+        ################################# only-image######################################
+        make_image_less_important = torch.full(
+            (self.importance.shape[0], self.importance.shape[1]), 0)  # FIXME 换成了我的写法
+        if type(text_mask[0]) == torch.Tensor:
+            text_image_mask = text_mask[0].tolist()
+        else:
+            text_image_mask = text_mask[0]
+        image_mask = [False if item is True else True for item in text_image_mask]
+        make_image_less_important[:, image_mask] = -10000
+        make_image_less_important = make_image_less_important.to(
+            device=self.importance.device, dtype=self.importance.dtype)
+        make_image_less_important[:, -self.recent_size:] = -10000
+        self.importance = self.importance + \
+            make_image_less_important 
+        _, keep_topk = torch.topk(
+            self.importance[:, :-self.recent_size], self.hh_size, dim=-1)  # keep_topk是[4, 758]
+        keep_topk = keep_topk.sort().values   # 除了recent window，留下的token在原始序列里的下标
+
+        self.importance.scatter_(1, keep_topk, 10000)  # 沿着第1维，把所有留下的token置为0
+        self.importance[:, -self.recent_size:] = 10000  # recent 一定会被留下
+        mask = self.importance == 10000  # 是个bool矩阵，true就表示留下来
+        expanded_mask = mask.unsqueeze(
+            0).unsqueeze(-1).expand_as(origin_key_states)  
+        k_hh_recent = torch.masked_select(
+            origin_key_states, expanded_mask).view(bsz, num_heads, -1, head_dim)
+        v_hh_recent = torch.masked_select(
+            origin_value_states, expanded_mask).view(bsz, num_heads, -1, head_dim)
+        ################## only-image#################################
+        ############################### only-image-merge###################################
+        k_hh_pruned = torch.masked_select(origin_key_states, ~expanded_mask).view(
+            bsz, num_heads, -1, head_dim)  # pruned tokens
+        v_hh_pruned = torch.masked_select(origin_value_states, ~expanded_mask).view(
+            bsz, num_heads, -1, head_dim)
+
+        # 在保留的tokens中区分text和image
+        visual_tokens_mask = torch.tensor(image_mask, device=mask.device)[keep_topk]  # [4, 234]
+        num_heads = visual_tokens_mask.shape[0]
+        padding = torch.tensor(image_mask[-self.recent_size:], device=mask.device).unsqueeze(0).repeat(num_heads, 1) 
+        visual_tokens_mask = torch.cat([visual_tokens_mask, padding], dim=1)   # [4, 260]
+        visual_tokens_mask = visual_tokens_mask.unsqueeze(0).unsqueeze(-1).expand(bsz, num_heads, -1, head_dim)
+        text_tokens_mask = ~visual_tokens_mask
+        
+        # 在pruned tokens中区分text和image 
+        pruned_tokens_indices = (~mask).nonzero(as_tuple=True)[1].view(mask.shape[0], -1)  # [4, 390]
+        pruned_visual_mask = torch.tensor(image_mask, device=mask.device)[pruned_tokens_indices]
+        pruned_visual_mask = pruned_visual_mask.unsqueeze(0).unsqueeze(-1).expand(bsz, num_heads, -1, head_dim)
+        pruned_text_mask = ~pruned_visual_mask
+
+        # 分离kept tokens中的text和image
+        k_hh_recent_visual = torch.masked_select(k_hh_recent, visual_tokens_mask).view(bsz, num_heads, -1, head_dim)
+        v_hh_recent_visual = torch.masked_select(v_hh_recent, visual_tokens_mask).view(bsz, num_heads, -1, head_dim)
+        k_hh_recent_text = torch.masked_select(k_hh_recent, text_tokens_mask).view(bsz, num_heads, -1, head_dim)
+        v_hh_recent_text = torch.masked_select(v_hh_recent, text_tokens_mask).view(bsz, num_heads, -1, head_dim)
+
+        # 分离pruned tokens中的text和image
+        k_hh_pruned_visual = torch.masked_select(k_hh_pruned, pruned_visual_mask).view(bsz, num_heads, -1, head_dim)
+        v_hh_pruned_visual = torch.masked_select(v_hh_pruned, pruned_visual_mask).view(bsz, num_heads, -1, head_dim)
+        k_hh_pruned_text = torch.masked_select(k_hh_pruned, pruned_text_mask).view(bsz, num_heads, -1, head_dim)
+        v_hh_pruned_text = torch.masked_select(v_hh_pruned, pruned_text_mask).view(bsz, num_heads, -1, head_dim)
+        
+        # 处理visual tokens
+        if k_hh_recent_visual.shape[2] != 0 and k_hh_pruned_visual.shape[2] != 0:
+            k_hh_pruned_visual = k_hh_pruned_visual.float()
+            k_hh_recent_visual = k_hh_recent_visual.float()
+            
+            similarity_visual = (k_hh_pruned_visual / torch.norm(k_hh_pruned_visual, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ (
+                (k_hh_recent_visual / torch.norm(k_hh_recent_visual, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)).transpose(-1, -2)
+            )
+            
+            max_indices_visual = similarity_visual.max(dim=-1).indices
+            merged_indices_visual = max_indices_visual.unsqueeze(-1).repeat(1, 1, 1, 128)
+            
+            # 合并visual tokens
+            k_hh_selected_visual = torch.gather(input=k_hh_recent_visual, dim=2, index=merged_indices_visual)
+            k_hh_merged_visual = (k_hh_pruned_visual + k_hh_selected_visual)/2
+            k_hh_recent_visual = torch.scatter_reduce(
+                input=k_hh_recent_visual.float(), 
+                dim=2, 
+                index=merged_indices_visual, 
+                src=k_hh_merged_visual.float(), 
+                reduce='mean', 
+                include_self=True
+            ).to(torch.bfloat16)
+            
+            v_hh_selected_visual = torch.gather(input=v_hh_recent_visual, dim=2, index=merged_indices_visual)
+            v_hh_merged_visual = (v_hh_pruned_visual + v_hh_selected_visual)/2
+            v_hh_recent_visual = torch.scatter_reduce(
+                input=v_hh_recent_visual.float(), 
+                dim=2, 
+                index=merged_indices_visual, 
+                src=v_hh_merged_visual.float(), 
+                reduce='mean', 
+                include_self=True
+            ).to(torch.bfloat16)
+
+        # 处理text tokens
+        if k_hh_recent_text.shape[2] != 0 and k_hh_pruned_text.shape[2] != 0:
+            k_hh_pruned_text = k_hh_pruned_text.float()
+            k_hh_recent_text = k_hh_recent_text.float()
+            
+            similarity_text = (k_hh_pruned_text / torch.norm(k_hh_pruned_text, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ (
+                (k_hh_recent_text / torch.norm(k_hh_recent_text, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)).transpose(-1, -2)
+            )
+            
+            max_indices_text = similarity_text.max(dim=-1).indices
+            merged_indices_text = max_indices_text.unsqueeze(-1).repeat(1, 1, 1, 128)
+            
+            # 合并text tokens
+            k_hh_selected_text = torch.gather(input=k_hh_recent_text, dim=2, index=merged_indices_text)
+            k_hh_merged_text = (k_hh_pruned_text + k_hh_selected_text)/2
+            k_hh_recent_text = torch.scatter_reduce(
+                input=k_hh_recent_text.float(), 
+                dim=2, 
+                index=merged_indices_text, 
+                src=k_hh_merged_text.float(), 
+                reduce='mean', 
+                include_self=True
+            ).to(torch.bfloat16)
+            
+            v_hh_selected_text = torch.gather(input=v_hh_recent_text, dim=2, index=merged_indices_text)
+            v_hh_merged_text = (v_hh_pruned_text + v_hh_selected_text)/2
+            v_hh_recent_text = torch.scatter_reduce(
+                input=v_hh_recent_text.float(), 
+                dim=2, 
+                index=merged_indices_text, 
+                src=v_hh_merged_text.float(), 
+                reduce='mean', 
+                include_self=True
+            ).to(torch.bfloat16)
+
+        # 将更新后的visual和text tokens放回k_hh_recent
+        k_hh_recent = torch.masked_scatter(k_hh_recent, visual_tokens_mask, k_hh_recent_visual.flatten())
+        k_hh_recent = torch.masked_scatter(k_hh_recent, text_tokens_mask, k_hh_recent_text.flatten())
+        v_hh_recent = torch.masked_scatter(v_hh_recent, visual_tokens_mask, v_hh_recent_visual.flatten())
+        v_hh_recent = torch.masked_scatter(v_hh_recent, text_tokens_mask, v_hh_recent_text.flatten())
+        
+        
+        return k_hh_recent, v_hh_recent, None, None    # 最后多加了两个参数，为了分析用
+
 
 
 class SnapKVCluster():
