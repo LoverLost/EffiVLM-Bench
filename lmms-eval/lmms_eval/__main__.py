@@ -32,7 +32,7 @@ from lmms_eval.utils import (
     simple_parse_args_string,
 )
 
-
+warnings.filterwarnings("ignore", message="Setting `pad_token_id` to `eos_token_id`:.*")
 def _int_or_none_list_arg_type(min_len: int, max_len: int, defaults: str, value: str, split_char: str = ","):
     def parse_value(item):
         item = item.strip().lower()

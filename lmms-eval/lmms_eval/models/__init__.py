@@ -23,6 +23,7 @@ AVAILABLE_MODELS = {
     "instructblip": "InstructBLIP",
     "internvl": "InternVLChat",
     "internvl2": "InternVL2",
+    "internvl2_with_kvcache": "InternVL2_with_kvcache",
     "llama_vid": "LLaMAVid",
     "llava": "Llava",
     "llava_hf": "LlavaHf",
