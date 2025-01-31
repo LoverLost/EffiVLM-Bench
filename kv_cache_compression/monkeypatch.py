@@ -312,6 +312,12 @@ def replace_qwen_for_internvl(args, model, method):
         InternVLChatModel = mod.InternVLChatModel
         model.generate = types.MethodType(internvl_generate_4B, model)
 
+    if '38B' in module_name:
+        mod = sys.modules.get(
+            'transformers_modules.InternVL2_5-38B.modeling_internvl_chat', None)
+        InternVLChatModel = mod.InternVLChatModel
+        model.generate = types.MethodType(internvl_generate_4B, model)
+
 
     if method == "streamingllm":
         print('using streamingllm')

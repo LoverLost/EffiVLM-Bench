@@ -550,9 +550,11 @@ class LOOK_MCluster():
         self.seq_len = None
 
     # FIXME 这里由于qwen2采用的是分组注意力机制，所以这里目前采用的方法就是取平均
-    def get_importance(self, attn_score_cache, total_heads=28, kv_heads=4):
+    def get_importance(self, attn_score_cache, num_key_value_groups):
 
         num_new_tokens = attn_score_cache.shape[2]
+        total_heads = attn_score_cache.shape[1]
+        kv_heads = total_heads // num_key_value_groups
 
         if self.importance is None:
             origin = attn_score_cache.sum(0).sum(1)   # [28, 7587]
@@ -566,7 +568,7 @@ class LOOK_MCluster():
             # aaa[..., :-num_new_tokens] = aaa[..., :-num_new_tokens] + self.hh_score
             # self.hh_score = aaa
 
-    def update(self, attn_score_cache):   # 这里的attension score cache就是attension weights
+    def update(self, attn_score_cache, num_key_value_groups):   # 这里的attension score cache就是attension weights
         # 判断new_seq_len是否大于1，即是否是prefill阶段
         if self.hh_ratio is not None and self.recent_ratio is not None and attn_score_cache.shape[-2] > 1:
             # 309  列这个的目的就是个例子，为了和下面的代码注释对应，能知道每个数的根源是什么
@@ -580,7 +582,7 @@ class LOOK_MCluster():
             self.recent_size = max(1, int(
                 attn_score_cache.shape[-1] * self.budget * 0.1))
             self.budget = self.hh_size + self.recent_size
-        self.get_importance(attn_score_cache)
+        self.get_importance(attn_score_cache, num_key_value_groups)
 
     # attn_score_cache是[bsz, num_heads, new_seq_len, total_seq_len]
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups, text_mask, head_dim, dropout, training, origin_key_states, origin_value_states, merge=True):
@@ -621,7 +623,7 @@ class LOOK_MCluster():
 
         # self.get_importance(attn_score_cache)
 
-        self.update(attn_score_cache)
+        self.update(attn_score_cache, num_key_value_groups)
         del attn_score_cache
         # [bsz, num_kv_heads, seq_len, kv_head_dim]
         seq_len = origin_key_states.size(self.k_seq_dim)
