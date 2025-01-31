@@ -1,3 +1,4 @@
+      
 import sys
 import transformers
 from .qwen_model import (
@@ -20,7 +21,6 @@ from .qwen_model import (
     qwen_flash_attention_forward_PyramidKV,
     qwen_flash_attention_forward_random,
     qwen_flash_attention_forward_snapkv,
-    qwen_flash_attention_forward_look_m,
     qwen2vl_model_forward_vlcache,
     qwen_flash_attention_forward_vlcache,
     qwen_flash_attention_forward_CSP
@@ -48,7 +48,8 @@ from .qwen2vl_model import (
     qwen2vl_vision_flash_attention2_forward_prumerge_plus,
     qwen2vl_vision_tower_forward_prumerge_plus,
     qwen2vl_vision_block_forward_prumerge_plus,
-    qwen2vl_generation_forward_prumerge_plus
+    qwen2vl_generation_forward_prumerge_plus,
+    qwen_flash_attention_forward_look_m,
 )
 
 
@@ -284,11 +285,11 @@ def replace_qwen2vl(args, method):
 
 def replace_internvl2_5(args, model, method):
 
-    modue_name = model.__class__.__module__
-    if '8B' in modue_name:
+    module_name = model.__class__.__module__
+    if '8B' in module_name and "38B" not in module_name:
         mod = sys.modules.get(
             'transformers_modules.InternVL2_5-8B.modeling_internlm2', None)
-    elif '26B' in modue_name:
+    elif '26B' in module_name:
         mod = sys.modules.get(
             'transformers_modules.InternVL2_5-26B.modeling_internlm2', None)
     else:
@@ -309,6 +310,11 @@ def replace_qwen_for_internvl(args, model, method):
     if '4B' in module_name:
         mod = sys.modules.get(
             'transformers_modules.InternVL2_5-4B.modeling_internvl_chat', None)
+        InternVLChatModel = mod.InternVLChatModel
+        model.generate = types.MethodType(internvl_generate_4B, model)
+    if '38B' in module_name:
+        mod = sys.modules.get(
+            'transformers_modules.InternVL2_5-38B.modeling_internvl_chat', None)
         InternVLChatModel = mod.InternVLChatModel
         model.generate = types.MethodType(internvl_generate_4B, model)
 
@@ -437,3 +443,5 @@ def replace_mistral(method):
 
 def replace_llama(method):
     pass
+
+    
