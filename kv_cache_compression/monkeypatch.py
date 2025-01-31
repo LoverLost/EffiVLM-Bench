@@ -31,8 +31,9 @@ from .internlm2_model import (
 
 )
 from .internvl2_5_model import (
-    internvlchat_forward,
+    internvl_generate_4B,
 )
+import types 
 
 from .kv_cache_utils import VlCacheKVCluster
 from .siglip_model import *
@@ -309,6 +310,8 @@ def replace_qwen_for_internvl(args, model, method):
         mod = sys.modules.get(
             'transformers_modules.InternVL2_5-4B.modeling_internvl_chat', None)
         InternVLChatModel = mod.InternVLChatModel
+        model.generate = types.MethodType(internvl_generate_4B, model)
+
 
     if method == "streamingllm":
         print('using streamingllm')
@@ -329,7 +332,6 @@ def replace_qwen_for_internvl(args, model, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_head_adaptive = args.vlcache_head_adaptive
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_budget_layer_adaptive = getattr(
             args, 'vlcache_budget_layer_adaptive', True)
-        InternVLChatModel.forward = internvlchat_forward
 
     elif method == 'look-m':
         print('using look-m')
