@@ -25,7 +25,7 @@ def version_cmp(v1, v2, op='eq'):
 
 
 @torch.no_grad()
-def internvl_generate_4B(
+def internvl_generate_with_mask(
         self,
         pixel_values: Optional[torch.FloatTensor] = None,
         input_ids: Optional[torch.FloatTensor] = None,
