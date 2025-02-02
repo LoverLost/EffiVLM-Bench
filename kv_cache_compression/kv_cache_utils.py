@@ -387,6 +387,7 @@ class VlCacheKVCluster():
         sorted_attn_kv_select = torch.cat(
             [sorted_attn_kv_select_image, sorted_attn_kv_select_window], dim=-1)
         sorted_attn_kv_select = torch.sort(sorted_attn_kv_select, dim=-1)[0]
+        sorted_attn_kv_select = sorted_attn_kv_select.to(past_key_value.key_cache[layer_idx].device)
 
         if self.vlcache_head_adaptive:
             self.prefill_update_head(
@@ -438,7 +439,7 @@ class VlCacheKVCluster():
         '''
         _, num_k_heads, _, _ = past_key_value.key_cache[0].shape
         sparsity_tensor = torch.stack(
-            [layer_sparsity[0] for layer_sparsity in vlcache_sparsity_layer_tuple])
+            [layer_sparsity[0].to(past_key_value.key_cache[0].device) for layer_sparsity in vlcache_sparsity_layer_tuple])
         non_sparsity_sum = (1 - sparsity_tensor).sum()
         buget_layers = torch.zeros(layers)
 
@@ -465,7 +466,7 @@ class VlCacheKVCluster():
 
         # [ layers , batch_size , head_num , all_kv_len]
         stacked_attn_weights_importance = torch.stack(
-            [attn_weights_importance[0] for attn_weights_importance in vlcache_attn_weights_importance_tuple])
+            [attn_weights_importance[0].to(past_key_value.key_cache[0].device) for attn_weights_importance in vlcache_attn_weights_importance_tuple])
 
         if not self.vlcache_head_adaptive:
             # if not head adaptive , sum over head and batch.

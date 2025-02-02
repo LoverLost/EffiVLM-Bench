@@ -1,6 +1,8 @@
       
 import sys
 import transformers
+from transformers.models.qwen2.modeling_qwen2 import Qwen2Attention
+from transformers.models.qwen2.modeling_qwen2 import Qwen2Model
 from .qwen_model import (
     qwen_attention_forward_streamingLLM,
     qwen_attention_forward_H2O,
@@ -31,7 +33,7 @@ from .internlm2_model import (
 
 )
 from .internvl2_5_model import (
-    internvl_generate_4B,
+    internvl_generate_with_mask
 )
 import types 
 
@@ -292,6 +294,8 @@ def replace_internvl2_5(args, model, method):
     elif '26B' in module_name:
         mod = sys.modules.get(
             'transformers_modules.InternVL2_5-26B.modeling_internlm2', None)
+    elif '38B' in module_name:
+        return replace_qwen_for_internvl_38B(args, model, method)
     else:
         return replace_qwen_for_internvl(args, model, method)
 
@@ -311,13 +315,7 @@ def replace_qwen_for_internvl(args, model, method):
         mod = sys.modules.get(
             'transformers_modules.InternVL2_5-4B.modeling_internvl_chat', None)
         InternVLChatModel = mod.InternVLChatModel
-        model.generate = types.MethodType(internvl_generate_4B, model)
-    if '38B' in module_name:
-        mod = sys.modules.get(
-            'transformers_modules.InternVL2_5-38B.modeling_internvl_chat', None)
-        InternVLChatModel = mod.InternVLChatModel
-        model.generate = types.MethodType(internvl_generate_4B, model)
-
+        model.generate = types.MethodType(internvl_generate_with_mask, model)
 
     if method == "streamingllm":
         print('using streamingllm')
@@ -371,23 +369,6 @@ def replace_qwen_for_internvl(args, model, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.origin = getattr(
             args, 'origin', None)
 
-    elif method == "csp":
-        print('using csp')
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_CSP
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.hh_ratio = getattr(
-            args, 'hh_ratio', None)
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.recent_ratio = getattr(
-            args, 'recent_ratio', None)
-        # The budget ratio allocated to cross-attention. The default value is 0.1
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.cross_ratio = getattr(
-            args, 'cross_ratio', 0.1)
-        # The kv_recent_bias setting is how many times you want the recent window to be larger than the original window. The default value is 1, which means no additional increase in the window size.
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.kv_recent_bias = getattr(
-            args, 'kv_recent_bias', 1)
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = getattr(
-            args, 'budgets', None)
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.csp_head_adaptive = args.csp_head_adaptive
-
     elif method == 'pyramidkv':
         print('using pyramidkv')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attn_forward_PyramidKV
@@ -427,14 +408,96 @@ def replace_qwen_for_internvl(args, model, method):
         LlavaMetaForCausalLM.encode_images_prumerge_plus_simple = encode_images_prumerge_plus_simple
         LlavaQwenForCausalLM.prepare_inputs_labels_for_multimodal = prepare_inputs_labels_for_multimodal_prumerge_plus
 
-    elif method == 'sparsevlm':
-        print('using sparsevlm')
-        from llava.model.language_model.llava_qwen import LlavaQwenForCausalLM
-        from llava.model.language_model.sparse_llava_qwen import LlavaQwenSparseForCausalLM
-        from llava.model.language_model.sparse_modeling_qwen import Qwen2SparseModel
-        LlavaQwenSparseForCausalLM.bias = 0
-        LlavaQwenSparseForCausalLM.scale = 13.5
-        Qwen2SparseModel.ratio = getattr(args, 'r', None)
+
+
+def replace_qwen_for_internvl_38B(args, model, method):
+
+    module_name = model.__class__.__module__
+    if '38B' in module_name:
+        mod = sys.modules.get(
+            'transformers_modules.InternVL2_5-38B.modeling_internvl_chat', None)
+        InternVLChatModel = mod.InternVLChatModel
+        model.generate = types.MethodType(internvl_generate_with_mask, model)
+
+
+    if method == "streamingllm":
+        print('using streamingllm')
+        for name, module in model.named_modules():
+            if isinstance(module, Qwen2Attention):
+                module.forward = types.MethodType(qwen_attention_forward_streamingLLM, module)
+                module.budgets = args.budgets
+    
+    elif method == "h2o":
+        print('using h2o')
+        for name, module in model.named_modules():
+            if isinstance(module, Qwen2Attention):
+                module.forward = types.MethodType(qwen_attention_forward_H2O, module)
+                module.budgets = args.budgets
+                module.h2o_head_adaptive = args.h2o_head_adaptive
+
+    elif method == "vl-cache":
+        print('using vlcache')
+        for name, module in model.named_modules():
+            if isinstance(module, Qwen2Attention):
+                module.forward = types.MethodType(qwen_attention_forward_vlcache, module)
+                module.vlcache_alpha_sparsity = args.budgets
+                module.vlcache_different_window_per_layer = args.vlcache_different_window_per_layer
+                module.vlcache_head_adaptive = args.vlcache_head_adaptive
+                module.vlcache_budget_layer_adaptive = getattr(args, 'vlcache_budget_layer_adaptive', True)
+            if isinstance(module, Qwen2Model):
+                module.forward = types.MethodType(qwen_model_forward_vlcache, module)
+
+    elif method == 'look-m':
+        print('using look-m')
+        for name, module in model.named_modules():
+            if isinstance(module, Qwen2Attention):
+                module.forward = types.MethodType(qwen_attention_forward_LOOK_M, module)
+                module.hh_ratio = getattr(args, 'hh_ratio', None)
+                module.recent_ratio = getattr(args, 'recent_ratio', None)
+                module.budget = getattr(args, 'budgets', None)
+                module.merge = getattr(args, 'merge', None)
+
+    elif method == 'snapkv':
+        print('using snapkv')
+        for name, module in model.named_modules():
+            if isinstance(module, Qwen2Attention):
+                module.forward = types.MethodType(qwen_attention_forward_snapkv, module)
+                module.snapkv_head_adaptive = args.snapkv_head_adaptive
+                module.pooling = args.pooling
+                module.budgets = args.budgets
+
+
+    elif method == 'fastv':
+        print('using fastv')
+        for name, module in model.named_modules():
+            if isinstance(module, Qwen2Attention):
+                module.forward = types.MethodType(qwen_attention_forward_fastv, module)
+                module.target_layer_idx = getattr(args, 'target_layer_idx', None)
+            if isinstance(module, Qwen2Model):
+                module.forward = types.MethodType(qwen_model_forward_fastv, module)
+                module.target_layer_idx = getattr(args, 'target_layer_idx', None)
+                module.budgets = getattr(args, 'budgets', None)
+                module.origin = getattr(args, 'origin', None)
+
+
+    elif method == 'pyramidkv':
+        print('using pyramidkv')
+        for name, module in model.named_modules():
+            if isinstance(module, Qwen2Attention):
+                module.forward = types.MethodType(qwen_attn_forward_PyramidKV, module)
+                module.budgets = args.budgets
+                module.pyramidkv_head_adaptive = args.pyramidkv_head_adaptive
+                module.pooling = args.pooling
+
+    
+    elif method == 'random':
+        print('using random')
+        for name, module in model.named_modules():
+            if isinstance(module, Qwen2Attention):
+                module.budgets = getattr(args, 'budgets', None)
+                module.forward = qwen_attention_forward_random
+    
+
 
 
 def replace_mistral(method):
