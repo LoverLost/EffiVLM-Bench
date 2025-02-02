@@ -87,7 +87,7 @@ def load_image(image, input_size=448, max_num=6):
     transform = build_transform(input_size=input_size)
     images = dynamic_preprocess(image, image_size=input_size, use_thumbnail=True, max_num=max_num)
     pixel_values = [transform(image) for image in images]
-    pixel_values = torch.stack(pixel_values)
+    pixel_values = torch.stack(pixel_values)   # [num_patches, 3, 448, 448]
     return pixel_values
 
 
