@@ -48,7 +48,9 @@ elif API_TYPE == "azure":
     }
 
 
-def get_chat_response(base64_image, prompt, max_retries=5, wait_time=10):
+def get_chat_response(base64_image, prompt, max_retries=100, wait_time=2):
+    max_retries=100
+    wait_time=2
     headers = {
         "Authorization": f"Bearer {API_KEY}",
         "Content-Type": "application/json",
@@ -63,7 +65,7 @@ def get_chat_response(base64_image, prompt, max_retries=5, wait_time=10):
                     {"type": "text", "text": prompt},
                     {
                         "type": "image_url",
-                        "image_url": f"data:image/jpeg;base64,{base64_image}",
+                        "image_url": {"url": f"data:image/jpeg;base64,{base64_image}"},
                     },
                 ],
             }
