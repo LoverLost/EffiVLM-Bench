@@ -33,7 +33,15 @@ from .internlm2_model import (
 
 )
 from .internvl2_5_model import (
-    internvl_generate_with_mask
+    internvl_generate_4B_visionzip,
+    internvl_extract_feature_4B_visionzip,
+    internvl_attention_forward_4B_visionzip,
+    internvl_naive_attn_4B_visionzip,
+    internvl_generate_with_mask,
+    internvl_generate_38B_visionzip,
+    internvl_extract_feature_38B_visionzip,
+    internvl_attention_forward_38B_visionzip,
+    internvl_naive_attn_38B_visionzip
 )
 import types 
 
@@ -308,6 +316,7 @@ def replace_internvl2_5(args, model, method):
         InternLM2AttnClass.budgets = args.budgets
 
 
+
 def replace_qwen_for_internvl(args, model, method):
 
     module_name = model.__class__.__module__
@@ -378,18 +387,13 @@ def replace_qwen_for_internvl(args, model, method):
 
     elif method == 'visionzip':
         print('using visionzip')
-        from llava.model.multimodal_encoder.siglip_encoder import SigLipVisionTower, SigLipEncoderLayer, SigLipAttention
-        from llava.model.llava_arch import LlavaMetaForCausalLM
-        from llava.model.language_model.llava_qwen import LlavaQwenForCausalLM
-        # SigLipVisionTower.dominant = getattr(args, 'dominant_num')
-        # SigLipVisionTower.contextual = getattr(args, 'contextual_num')
-        SigLipVisionTower.budgets = getattr(args, 'budgets', None)
-        SigLipVisionTower.forward = siglip_vision_tower_forward
-        SigLipEncoderLayer.forward = siglip_EncoderLayer_forward
-        SigLipAttention.forward = siglip_attention_forward
-        LlavaMetaForCausalLM.encode_images_visionzip = encode_images_visionzip
-        LlavaMetaForCausalLM.encode_images_visionzip_simple = encode_images_visionzip_simple
-        LlavaQwenForCausalLM.prepare_inputs_labels_for_multimodal = prepare_inputs_labels_for_multimodal_visionzip
+        for idx, layer in enumerate(model.vision_model.encoder.layers):    # 绑定layer_idx属性
+            layer.attn.layer_idx = idx
+            layer.attn.forward = types.MethodType(internvl_attention_forward_4B_visionzip, layer.attn)
+            layer.attn._naive_attn = types.MethodType(internvl_naive_attn_4B_visionzip, layer.attn)
+        model.generate = types.MethodType(internvl_generate_4B_visionzip, model)
+        model.extract_feature = types.MethodType(internvl_extract_feature_4B_visionzip, model)
+        model.budgets = getattr(args, 'budgets', None)
 
     elif method == 'random':
         print('using random')
@@ -495,9 +499,29 @@ def replace_qwen_for_internvl_38B(args, model, method):
         for name, module in model.named_modules():
             if isinstance(module, Qwen2Attention):
                 module.budgets = getattr(args, 'budgets', None)
-                module.forward = qwen_attention_forward_random
+                module.forward = types.MethodType(qwen_attention_forward_random, module)
     
+    elif method == 'visionzip':
+        print('using visionzip')
+        for idx, layer in enumerate(model.vision_model.encoder.layers):    # 绑定layer_idx属性
+            layer.attn.layer_idx = idx
+            layer.attn.forward = types.MethodType(internvl_attention_forward_38B_visionzip, layer.attn)
+            layer.attn._naive_attn = types.MethodType(internvl_naive_attn_38B_visionzip, layer.attn)
+        model.generate = types.MethodType(internvl_generate_38B_visionzip, model)
+        model.extract_feature = types.MethodType(internvl_extract_feature_38B_visionzip, model)
+        model.budgets = getattr(args, 'budgets', None)
 
+
+    elif method == 'prumerge+':
+        print('using prumerge+')
+        from llava.model.multimodal_encoder.siglip_encoder import SigLipVisionTower
+        from llava.model.language_model.llava_qwen import LlavaQwenForCausalLM
+        from llava.model.llava_arch import LlavaMetaForCausalLM
+        SigLipVisionTower.budgets = getattr(args, 'budgets', None)
+        SigLipVisionTower.forward = siglip_vision_tower_forward_prumerge_plus
+        LlavaMetaForCausalLM.encode_images_prumerge_plus = encode_images_prumerge_plus
+        LlavaMetaForCausalLM.encode_images_prumerge_plus_simple = encode_images_prumerge_plus_simple
+        LlavaQwenForCausalLM.prepare_inputs_labels_for_multimodal = prepare_inputs_labels_for_multimodal_prumerge_plus
 
 
 def replace_mistral(method):

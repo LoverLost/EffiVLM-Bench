@@ -1281,17 +1281,26 @@ def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, gr
     ## handle visionzip here ##
     # current_result = self.merger(hidden_states)   # 在这里会将token_num / 4
 
+    # attn_weights = self.blocks[-2].attn.attn_weights
+    # num_heads, q_len, k_len = attn_weights.shape
+    # assert q_len == k_len, "q_len and k_len should be the same, the error is in Qwen2VisionTransformerPretrainedModel's forward function"
+    # q_len_pooled = q_len // 4
+    # k_len_pooled = k_len // 4
+    # attn_weights = attn_weights.view(num_heads, q_len_pooled, 4, k_len_pooled, 4)  
+    # attn_weights = attn_weights.mean(dim=(2, 4))
+    # attention_sum = attn_weights.mean(dim=0).mean(dim=0)   # 按头和行取平均 
+
+
+    # 算attn的第二种方式
     attn_weights = self.blocks[-2].attn.attn_weights
     num_heads, q_len, k_len = attn_weights.shape
     assert q_len == k_len, "q_len and k_len should be the same, the error is in Qwen2VisionTransformerPretrainedModel's forward function"
-    q_len_pooled = q_len // 4
-    k_len_pooled = k_len // 4
-    attn_weights = attn_weights.view(num_heads, q_len_pooled, 4, k_len_pooled, 4)  
-    attn_weights = attn_weights.mean(dim=(2, 4))
-    attention_sum = attn_weights.mean(dim=0).mean(dim=0)   # 按头和行取平均  shape[888]
+    attn_weights = attn_weights.mean(dim=0).mean(dim=0)   # 按头和行取平均  shape[888]
+    attention_sum = attn_weights.view(-1, 4).mean(dim=1)
+    
 
-    hidden_states = self.blocks[-2].hidden_states
-    self.blocks[-2].hidden_states = None
+    # hidden_states = self.blocks[-2].hidden_states
+    # self.blocks[-2].hidden_states = None
     hidden_states = self.merger(hidden_states)    # 也得跟着merge。。。（不知道这么做是不是最优的）
     metric = self.blocks[-2].attn.metric
     self.blocks[-2].attn.metric = None
@@ -1353,6 +1362,15 @@ def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, gr
     hidden_states_save[contextual_positions] = contextual_tokens
 
     return hidden_states_save, all_keep_indices
+
+    # total_token_num = attention_sum.shape[0]
+    # dominant_num = max(1, int(total_token_num * self.budgets))
+    # all_indices = attention_sum.topk(dominant_num, dim=0).indices
+    # all_indices = all_indices.sort().values
+    # mask = torch.ones_like(hidden_states[:, 0], dtype=torch.bool, device=attention_sum.device).scatter_(0, all_indices, False)
+    # dominant_tokens = hidden_states.masked_select(~mask.unsqueeze(-1)).view(dominant_num, hidden_states.shape[1])
+    # return dominant_tokens, all_indices
+
 
 def qwen2vl_vision_flash_attention2_forward_visionzip(self, hidden_states: torch.Tensor, cu_seqlens: torch.Tensor, rotary_pos_emb: torch.Tensor = None
     ) -> torch.Tensor:
