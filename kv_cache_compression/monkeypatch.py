@@ -499,7 +499,7 @@ def replace_qwen_for_internvl_38B(args, model, method):
         for name, module in model.named_modules():
             if isinstance(module, Qwen2Attention):
                 module.budgets = getattr(args, 'budgets', None)
-                module.forward = qwen_attention_forward_random
+                module.forward = types.MethodType(qwen_attention_forward_random, module)
     
     elif method == 'visionzip':
         print('using visionzip')
