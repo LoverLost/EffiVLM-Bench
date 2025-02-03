@@ -33,12 +33,15 @@ from .internlm2_model import (
 
 )
 from .internvl2_5_model import (
-    internvl_generate_4B,
     internvl_generate_4B_visionzip,
     internvl_extract_feature_4B_visionzip,
     internvl_attention_forward_4B_visionzip,
     internvl_naive_attn_4B_visionzip,
-    internvl_generate_with_mask
+    internvl_generate_with_mask,
+    internvl_generate_38B_visionzip,
+    internvl_extract_feature_38B_visionzip,
+    internvl_attention_forward_38B_visionzip,
+    internvl_naive_attn_38B_visionzip
 )
 import types 
 
@@ -498,102 +501,14 @@ def replace_qwen_for_internvl_38B(args, model, method):
                 module.budgets = getattr(args, 'budgets', None)
                 module.forward = qwen_attention_forward_random
     
-
-def replace_qwen_for_internvl_38B(args, model, method):
-
-    module_name = model.__class__.__module__
-    if '38B' in module_name:
-        mod = sys.modules.get(
-            'transformers_modules.InternVL2_5-38B.modeling_internvl_chat', None)
-        InternVLChatModel = mod.InternVLChatModel
-        model.generate = types.MethodType(internvl_generate_with_mask, model)
-
-
-    if method == "streamingllm":
-        print('using streamingllm')
-        for name, module in model.named_modules():
-            if isinstance(module, Qwen2Attention):
-                module.forward = types.MethodType(qwen_attention_forward_streamingLLM, module)
-                module.budgets = args.budgets
-    
-    elif method == "h2o":
-        print('using h2o')
-        for name, module in model.named_modules():
-            if isinstance(module, Qwen2Attention):
-                module.forward = types.MethodType(qwen_attention_forward_H2O, module)
-                module.budgets = args.budgets
-                module.h2o_head_adaptive = args.h2o_head_adaptive
-
-    elif method == "vl-cache":
-        print('using vlcache')
-        for name, module in model.named_modules():
-            if isinstance(module, Qwen2Attention):
-                module.forward = types.MethodType(qwen_attention_forward_vlcache, module)
-                module.vlcache_alpha_sparsity = args.budgets
-                module.vlcache_different_window_per_layer = args.vlcache_different_window_per_layer
-                module.vlcache_head_adaptive = args.vlcache_head_adaptive
-                module.vlcache_budget_layer_adaptive = getattr(args, 'vlcache_budget_layer_adaptive', True)
-            if isinstance(module, Qwen2Model):
-                module.forward = types.MethodType(qwen_model_forward_vlcache, module)
-
-    elif method == 'look-m':
-        print('using look-m')
-        for name, module in model.named_modules():
-            if isinstance(module, Qwen2Attention):
-                module.forward = types.MethodType(qwen_attention_forward_LOOK_M, module)
-                module.hh_ratio = getattr(args, 'hh_ratio', None)
-                module.recent_ratio = getattr(args, 'recent_ratio', None)
-                module.budget = getattr(args, 'budgets', None)
-                module.merge = getattr(args, 'merge', None)
-
-    elif method == 'snapkv':
-        print('using snapkv')
-        for name, module in model.named_modules():
-            if isinstance(module, Qwen2Attention):
-                module.forward = types.MethodType(qwen_attention_forward_snapkv, module)
-                module.snapkv_head_adaptive = args.snapkv_head_adaptive
-                module.pooling = args.pooling
-                module.budgets = args.budgets
-
-
-    elif method == 'fastv':
-        print('using fastv')
-        for name, module in model.named_modules():
-            if isinstance(module, Qwen2Attention):
-                module.forward = types.MethodType(qwen_attention_forward_fastv, module)
-                module.target_layer_idx = getattr(args, 'target_layer_idx', None)
-            if isinstance(module, Qwen2Model):
-                module.forward = types.MethodType(qwen_model_forward_fastv, module)
-                module.target_layer_idx = getattr(args, 'target_layer_idx', None)
-                module.budgets = getattr(args, 'budgets', None)
-                module.origin = getattr(args, 'origin', None)
-
-
-    elif method == 'pyramidkv':
-        print('using pyramidkv')
-        for name, module in model.named_modules():
-            if isinstance(module, Qwen2Attention):
-                module.forward = types.MethodType(qwen_attn_forward_PyramidKV, module)
-                module.budgets = args.budgets
-                module.pyramidkv_head_adaptive = args.pyramidkv_head_adaptive
-                module.pooling = args.pooling
-
-    
-    elif method == 'random':
-        print('using random')
-        for name, module in model.named_modules():
-            if isinstance(module, Qwen2Attention):
-                module.budgets = getattr(args, 'budgets', None)
-                module.forward = qwen_attention_forward_random
-    
     elif method == 'visionzip':
         print('using visionzip')
         for idx, layer in enumerate(model.vision_model.encoder.layers):    # 绑定layer_idx属性
             layer.attn.layer_idx = idx
-            layer.attn.forward = types.MethodType(internvl_attention_forward_4B_visionzip, layer.attn)
-            layer.attn._naive_attn = types.MethodType(internvl_naive_attn_4B_visionzip, layer.attn)
-        model.generate = types.MethodType(internvl_generate_4B_visionzip, model)
-        model.extract_feature = types.MethodType(internvl_extract_feature_4B_visionzip, model)
+            layer.attn.forward = types.MethodType(internvl_attention_forward_38B_visionzip, layer.attn)
+            layer.attn._naive_attn = types.MethodType(internvl_naive_attn_38B_visionzip, layer.attn)
+        model.generate = types.MethodType(internvl_generate_38B_visionzip, model)
+        model.extract_feature = types.MethodType(internvl_extract_feature_38B_visionzip, model)
         model.budgets = getattr(args, 'budgets', None)
 
 
