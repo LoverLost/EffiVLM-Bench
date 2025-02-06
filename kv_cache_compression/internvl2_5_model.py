@@ -771,7 +771,8 @@ def internvl_extract_feature_38B_prumerge_plus(self, pixel_values):   # 编码�
             concatenated_tensor = torch.cat([iqr_idx[i], filtered_sequence])[:budgets_token]
             idx[i] = concatenated_tensor    
     else:
-        _, idx = torch.topk(cls_attn, budgets_token, dim=1, largest=True).to(device=self.device)  # [B, left_tokens] , sorted=True
+        _, idx = torch.topk(cls_attn, budgets_token, dim=1, largest=True)  # [B, left_tokens] , sorted=True
+        idx = idx.to(device=self.device)
     
     index = idx.unsqueeze(-1).expand(-1, -1, C).to(self.device)  # [B, left_tokens, C]
 
