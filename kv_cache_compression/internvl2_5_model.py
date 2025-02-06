@@ -716,17 +716,17 @@ def internvl_extract_feature_38B_prumerge_plus(self, pixel_values):   # 编码�
     vit_embeds = vit_embeds.reshape(vit_embeds.shape[0], h, w, -1)
     vit_embeds = self.pixel_shuffle(vit_embeds, scale_factor=self.downsample_ratio)
     vit_embeds = vit_embeds.reshape(vit_embeds.shape[0], -1, vit_embeds.shape[-1])
-    vit_embeds = self.mlp1(vit_embeds)   # [num_patches, 256, 2048]
+    vit_embeds = self.mlp1(vit_embeds).to(self.device)   # [num_patches, 256, 2048]
 
     cls_attn = self.vision_model.encoder.layers[-2].attn.cls_attn_weights
     cls_attn = cls_attn.view(cls_attn.shape[0], 32, 32)
     cls_attn = cls_attn.view(cls_attn.shape[0], 16, 2, 16, 2).mean(dim=(2, 4))
-    cls_attn = cls_attn.flatten(1,2)
+    cls_attn = cls_attn.flatten(1,2).to(self.device)
 
     metric = self.vision_model.encoder.layers[-2].attn.metric
     metric = metric.view(metric.shape[0], 32, 32, -1)
     metric = metric.view(metric.shape[0], 16, 2, 16, 2, -1).mean(dim=(2, 4))
-    desired_layer_k = metric.flatten(1,2)
+    desired_layer_k = metric.flatten(1,2).to(self.device)
 
     B, N, C = vit_embeds.shape # anyres, 256, 2048
     B_key, N_key, C_key = desired_layer_k.shape
@@ -752,7 +752,7 @@ def internvl_extract_feature_38B_prumerge_plus(self, pixel_values):   # 编码�
             step_length = max(1, int(N / budgets_token))
             arithmetic_sequence = torch.arange(0, N, step_length).to(device=self.device)
             
-            original_tensor_1d = iqr_idx[i].flatten()
+            original_tensor_1d = iqr_idx[i].flatten().to(device=self.device)
             filtered_sequence = torch.tensor([x for x in arithmetic_sequence if x not in original_tensor_1d]).to(device=self.device)
             
             # If the filtered sequence is too long, truncate it
@@ -771,9 +771,9 @@ def internvl_extract_feature_38B_prumerge_plus(self, pixel_values):   # 编码�
             concatenated_tensor = torch.cat([iqr_idx[i], filtered_sequence])[:budgets_token]
             idx[i] = concatenated_tensor    
     else:
-        _, idx = torch.topk(cls_attn, budgets_token, dim=1, largest=True)  # [B, left_tokens] , sorted=True
+        _, idx = torch.topk(cls_attn, budgets_token, dim=1, largest=True).to(device=self.device)  # [B, left_tokens] , sorted=True
     
-    index = idx.unsqueeze(-1).expand(-1, -1, C)  # [B, left_tokens, C]
+    index = idx.unsqueeze(-1).expand(-1, -1, C).to(self.device)  # [B, left_tokens, C]
 
     x_others = torch.gather(vit_embeds, dim=1, index=index)  # [B, left_tokens, C]
     Key_others = torch.gather(desired_layer_k, dim=1, index=idx.unsqueeze(-1).expand(-1, -1, C_key))  # [B, left_tokens, C_key]
