@@ -41,7 +41,15 @@ from .internvl2_5_model import (
     internvl_generate_38B_visionzip,
     internvl_extract_feature_38B_visionzip,
     internvl_attention_forward_38B_visionzip,
-    internvl_naive_attn_38B_visionzip
+    internvl_naive_attn_38B_visionzip,
+    internvl_generate_4B_prumerge_plus,
+    internvl_extract_feature_4B_prumerge_plus,
+    internvl_attention_forward_4B_prumerge_plus,
+    internvl_naive_attn_4B_prumerge_plus,
+    internvl_generate_38B_prumerge_plus,
+    internvl_extract_feature_38B_prumerge_plus,
+    internvl_attention_forward_38B_prumerge_plus,
+    internvl_naive_attn_38B_prumerge_plus,
 )
 import types 
 
@@ -403,14 +411,13 @@ def replace_qwen_for_internvl(args, model, method):
 
     elif method == 'prumerge+':
         print('using prumerge+')
-        from llava.model.multimodal_encoder.siglip_encoder import SigLipVisionTower
-        from llava.model.language_model.llava_qwen import LlavaQwenForCausalLM
-        from llava.model.llava_arch import LlavaMetaForCausalLM
-        SigLipVisionTower.budgets = getattr(args, 'budgets', None)
-        SigLipVisionTower.forward = siglip_vision_tower_forward_prumerge_plus
-        LlavaMetaForCausalLM.encode_images_prumerge_plus = encode_images_prumerge_plus
-        LlavaMetaForCausalLM.encode_images_prumerge_plus_simple = encode_images_prumerge_plus_simple
-        LlavaQwenForCausalLM.prepare_inputs_labels_for_multimodal = prepare_inputs_labels_for_multimodal_prumerge_plus
+        for idx, layer in enumerate(model.vision_model.encoder.layers):    # 绑定layer_idx属性
+            layer.attn.layer_idx = idx
+            layer.attn.forward = types.MethodType(internvl_attention_forward_4B_prumerge_plus, layer.attn)
+            layer.attn._naive_attn = types.MethodType(internvl_naive_attn_4B_prumerge_plus, layer.attn)
+        model.generate = types.MethodType(internvl_generate_4B_prumerge_plus, model)
+        model.extract_feature = types.MethodType(internvl_extract_feature_4B_prumerge_plus, model)
+        model.budgets = getattr(args, 'budgets', None)
 
 
 
@@ -514,15 +521,13 @@ def replace_qwen_for_internvl_38B(args, model, method):
 
     elif method == 'prumerge+':
         print('using prumerge+')
-        from llava.model.multimodal_encoder.siglip_encoder import SigLipVisionTower
-        from llava.model.language_model.llava_qwen import LlavaQwenForCausalLM
-        from llava.model.llava_arch import LlavaMetaForCausalLM
-        SigLipVisionTower.budgets = getattr(args, 'budgets', None)
-        SigLipVisionTower.forward = siglip_vision_tower_forward_prumerge_plus
-        LlavaMetaForCausalLM.encode_images_prumerge_plus = encode_images_prumerge_plus
-        LlavaMetaForCausalLM.encode_images_prumerge_plus_simple = encode_images_prumerge_plus_simple
-        LlavaQwenForCausalLM.prepare_inputs_labels_for_multimodal = prepare_inputs_labels_for_multimodal_prumerge_plus
-
+        for idx, layer in enumerate(model.vision_model.encoder.layers):    # 绑定layer_idx属性
+            layer.attn.layer_idx = idx
+            layer.attn.forward = types.MethodType(internvl_attention_forward_38B_prumerge_plus, layer.attn)
+            layer.attn._naive_attn = types.MethodType(internvl_naive_attn_38B_prumerge_plus, layer.attn)
+        model.generate = types.MethodType(internvl_generate_38B_prumerge_plus, model)
+        model.extract_feature = types.MethodType(internvl_extract_feature_38B_prumerge_plus, model)
+        model.budgets = getattr(args, 'budgets', None)
 
 def replace_mistral(method):
     pass

@@ -1622,17 +1622,17 @@ def qwen2vl_vision_tower_forward_prumerge_plus(self, hidden_states: torch.Tensor
 
 
     # image_features [1,616/4,1280]
-    image_features = self.blocks[-2].hidden_states
-    image_features = self.merger(image_features)
+    # image_features = self.blocks[-2].hidden_states
+    image_features = self.merger(hidden_states)
     image_features = image_features.unsqueeze(0)
     B, N, C = image_features.shape
 
-    # desired_layer_k [16,616,80]
+    # desired_layer_k [616,1280]
     desired_layer_k = self.blocks[-2].attn.metric
-    # [16,616,80] -> [16,616/4,4,80]
-    desired_layer_k = desired_layer_k.view(num_heads, desired_layer_k.shape[1] // 4, 4, -1)
-    # [16,616/4,4,80] -> [1,616/4,4,80]
-    desired_layer_k = desired_layer_k.mean(dim=(0,2)).unsqueeze(0)
+    # [616,1280] -> [616/4,4,1280]
+    desired_layer_k = desired_layer_k.view(desired_layer_k.shape[0] // 4, 4, -1)
+    # [616/4,4,1280] -> [1,616/4,1280]
+    desired_layer_k = desired_layer_k.mean(dim=1).unsqueeze(0)
     k_C = desired_layer_k.shape[-1]
     
     # cls_attn [1,616]
@@ -1753,7 +1753,7 @@ def qwen2vl_vision_flash_attention2_forward_prumerge_plus(self, hidden_states: t
 
         if self.layer_idx == 30:   # HACK mimic eager attention to get the attention weights
             k_here = k.transpose(0, 1)   # [num_heads, seq_len, head_dim]
-            self.metric = k_here
+            self.metric = k.view(seq_length, -1)
             q_here = q.transpose(0, 1)
             attn_weights_here = torch.matmul(q_here, k_here.transpose(1, 2)) / math.sqrt(q.shape[-1])   # [num_heads, seq_len, seq_len]
             # attention_mask_here = torch.full(  # 手动算的mask，用-inf填充
