@@ -162,12 +162,11 @@ class Llava_OneVision_with_kvcache(lmms):
         if self.method is not None:
             from kv_cache_compression.monkeypatch import replace_qwen,replace_mistral,replace_llama
             if "qwen" in model_name.lower():
-                replace_qwen(self.args,self.method.lower())
+                replace_qwen(self.args,self._model,self.method.lower())
             elif "mistral" in model_name.lower():
-                replace_mistral(self.args,self.method.lower())
+                replace_mistral(self.args,self._model,self.method.lower())
             elif "llama" in model_name.lower():
-                replace_llama(self.args,self.method.lower())
-
+                replace_llama(self.args,self._model,self.method.lower())
 
         self._config = self._model.config
         self.model.eval()
