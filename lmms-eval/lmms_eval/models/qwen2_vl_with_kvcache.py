@@ -44,7 +44,8 @@ class Qwen2_VL_with_kvcache(lmms):
         attn_implementation: Optional[str] = "eager",
         # max_pixels: int = 12845056,
         # max_pixels: int = 6422528,
-        max_pixels: int = 1605632,   # 2048 * 28 * 28
+        # max_pixels: int = 1605632,   # 2048 * 28 * 28
+        max_pixels: int = 1204224,   # 1536 * 28 * 28
         min_pixels: int = 3136,
         max_num_frames: int = 32,
         method: Optional[str] = None,
@@ -92,7 +93,7 @@ class Qwen2_VL_with_kvcache(lmms):
         # not change
         if self.method is not None:
             from kv_cache_compression.monkeypatch import replace_qwen2vl
-            replace_qwen2vl(self.args,self.method.lower())
+            replace_qwen2vl(self.args,self._model,self.method.lower())
 
 
         self.processor = Qwen2VLProcessor.from_pretrained(pretrained, max_pixels=max_pixels, min_pixels=min_pixels)
@@ -229,7 +230,7 @@ class Qwen2_VL_with_kvcache(lmms):
                 message = [{"role": "system", "content": "You are a helpful assistant."}]
 
                 if len(visuals) > 0:
-                    visual = visuals[i] if i < len(visuals) else None
+                    visual = visuals[i] if i < len(visuals) and len(visuals) == 1 else visuals 
                     if isinstance(visual, str) and visual.endswith((".mp4", ".avi", ".mov")):  # Video file
                         vr = decord.VideoReader(visual)
                         first_frame = vr[0].asnumpy()
