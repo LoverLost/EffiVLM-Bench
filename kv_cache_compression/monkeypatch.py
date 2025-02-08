@@ -283,6 +283,8 @@ def replace_qwen2vl(args, model, method):
                 module.vlcache_different_window_per_layer = args.vlcache_different_window_per_layer
                 module.vlcache_head_adaptive = args.vlcache_head_adaptive
                 module.vlcache_budget_layer_adaptive = getattr(args, 'vlcache_budget_layer_adaptive', True)
+            if isinstance(module, Qwen2VLModel):
+                module.forward = types.MethodType(qwen2vl_model_forward_vlcache, module)
 
     elif method == "csp":
         print('using csp')

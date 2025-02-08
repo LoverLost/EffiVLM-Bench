@@ -2458,17 +2458,38 @@ def qwen_flash_attention_forward_vlcache(self,
     value_states = repeat_kv(value_states, self.num_key_value_groups)
     dropout_rate = 0.0 if not self.training else self.attention_dropout
 
+    # if q_len > 1:
+
+    #     attn_weights = torch.matmul( 
+    #         query_states.float(), key_states.transpose(-2, -1).float()) / math.sqrt(self.head_dim)
+    #     attention_mask_vlcache = torch.triu(torch.full((q_len,q_len),float('-inf')),diagonal=1).to(dtype=torch.float32,device=attn_weights.device) 
+    #     attn_weights += attention_mask_vlcache
+    #     del attention_mask_vlcache
+    #     attn_weights = nn.functional.softmax(
+    #         attn_weights, dim=-1, dtype=torch.float32)
+    #     attn_weights_postvison = attn_weights[:, :, -
+    #                                           self.kv_cluster.vlcache_post_vision_size:, :]
+
+    #     sparsity_layer_tuple = self.kv_cluster.get_sparsity_layer(
+    #         attn_weights_postvison, q_len, self.kv_cluster.vlcache_post_vision_size)
+    #     attn_weights_importance_tuple = self.kv_cluster.get_token_importance(
+    #         attn_weights_postvison)
+    #     self.kv_cluster.sparsity_layer_tuple += (sparsity_layer_tuple,)
+    #     self.kv_cluster.attn_weights_importance_tuple += (
+    #         attn_weights_importance_tuple,)
+    #     del attn_weights,attn_weights_postvison
+
     if q_len > 1:
 
         attn_weights = torch.matmul( 
-            query_states.float(), key_states.transpose(-2, -1).float()) / math.sqrt(self.head_dim)
+            query_states[..., -self.kv_cluster.vlcache_post_vision_size:, :].float(), key_states.transpose(-2, -1).float()) / math.sqrt(self.head_dim)
         attention_mask_vlcache = torch.triu(torch.full((q_len,q_len),float('-inf')),diagonal=1).to(dtype=torch.float32,device=attn_weights.device) 
+        attention_mask_vlcache = attention_mask_vlcache[-self.kv_cluster.vlcache_post_vision_size:, :]
         attn_weights += attention_mask_vlcache
         del attention_mask_vlcache
         attn_weights = nn.functional.softmax(
             attn_weights, dim=-1, dtype=torch.float32)
-        attn_weights_postvison = attn_weights[:, :, -
-                                              self.kv_cluster.vlcache_post_vision_size:, :]
+        attn_weights_postvison = attn_weights
 
         sparsity_layer_tuple = self.kv_cluster.get_sparsity_layer(
             attn_weights_postvison, q_len, self.kv_cluster.vlcache_post_vision_size)
