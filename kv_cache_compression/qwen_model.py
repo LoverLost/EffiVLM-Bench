@@ -2483,13 +2483,22 @@ def qwen_flash_attention_forward_vlcache(self,
 
         attn_weights = torch.matmul( 
             query_states[..., -self.kv_cluster.vlcache_post_vision_size:, :].float(), key_states.transpose(-2, -1).float()) / math.sqrt(self.head_dim)
-        attention_mask_vlcache = torch.triu(torch.full((q_len,q_len),float('-inf')),diagonal=1).to(dtype=torch.float32,device=attn_weights.device) 
-        attention_mask_vlcache = attention_mask_vlcache[-self.kv_cluster.vlcache_post_vision_size:, :]
+        # attention_mask_vlcache = torch.triu(torch.full((q_len,q_len),float('-inf')),diagonal=1).to(dtype=torch.float32,device=attn_weights.device) 
+        # attention_mask_vlcache = attention_mask_vlcache[-self.kv_cluster.vlcache_post_vision_size:, :]
+        
+        mask = torch.full((self.kv_cluster.vlcache_post_vision_size,q_len), torch.finfo(attn_weights.dtype).min, device=attn_weights.device)
+        mask_cond = torch.arange(mask.size(-1), device=attn_weights.device)
+        sys_image_len = q_len - self.kv_cluster.vlcache_post_vision_size
+        mask_row = torch.arange(sys_image_len,mask.size(-1), device=attn_weights.device)
+        mask.masked_fill_(mask_cond < (mask_row + 1).view(mask.size(0), 1), 0)
+        mask = mask.to(attn_weights.device)
+        attention_mask_vlcache = mask[None, None, :, :]
+        
         attn_weights += attention_mask_vlcache
         del attention_mask_vlcache
-        attn_weights = nn.functional.softmax(
+        attn_weights_postvison = nn.functional.softmax(
             attn_weights, dim=-1, dtype=torch.float32)
-        attn_weights_postvison = attn_weights
+        # attn_weights_postvison = attn_weights
 
         sparsity_layer_tuple = self.kv_cluster.get_sparsity_layer(
             attn_weights_postvison, q_len, self.kv_cluster.vlcache_post_vision_size)
