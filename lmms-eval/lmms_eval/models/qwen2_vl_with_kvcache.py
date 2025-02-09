@@ -45,7 +45,8 @@ class Qwen2_VL_with_kvcache(lmms):
         # max_pixels: int = 12845056,
         # max_pixels: int = 6422528,
         # max_pixels: int = 1605632,   # 2048 * 28 * 28
-        max_pixels: int = 1204224,   # 1536 * 28 * 28
+        # max_pixels: int = 1204224,   # 1536 * 28 * 28
+        max_pixels: int = 700*28*28,   # 46 * 26* 28 * 28
         min_pixels: int = 3136,
         max_num_frames: int = 32,
         method: Optional[str] = None,
@@ -230,7 +231,9 @@ class Qwen2_VL_with_kvcache(lmms):
                 message = [{"role": "system", "content": "You are a helpful assistant."}]
 
                 if len(visuals) > 0:
-                    visual = visuals[i] if i < len(visuals) and len(visuals) == 1 else visuals 
+                    visual = visuals[i] if i < len(visuals) and len(visuals) == 1 else visuals
+                    if isinstance(visual, dict) and len(visuals) == 1:
+                        visual = visual["video_path"]
                     if isinstance(visual, str) and visual.endswith((".mp4", ".avi", ".mov")):  # Video file
                         vr = decord.VideoReader(visual)
                         first_frame = vr[0].asnumpy()
