@@ -235,9 +235,9 @@ class Qwen2_VL_with_kvcache(lmms):
                     if isinstance(visual, dict) and len(visuals) == 1:
                         visual = visual["video_path"]
                     if isinstance(visual, str) and visual.endswith((".mp4", ".avi", ".mov")):  # Video file
-                        vr = decord.VideoReader(visual)
-                        first_frame = vr[0].asnumpy()
-                        height, width = first_frame.shape[:2]
+                        # vr = decord.VideoReader(visual)
+                        # first_frame = vr[0].asnumpy()
+                        # height, width = first_frame.shape[:2]
                         # max_pixels = height * width
                         message.append({"role": "user", "content": [{"type": "video", "video": visual, "max_pixels": self.max_pixels}, {"type": "text", "text": context}]})
                     elif isinstance(visual, Image.Image):  # Single image
