@@ -46,7 +46,7 @@ def quick_batch_index_select(x, idx):
     return out
 
 
-def softmax_with_policy(attn, policy, eps=1e-6):    # attn : [2, 687, 32, 32] policy : [2, 687, 1]
+def softmax_with_policy(attn, policy, eps=1e-6):  
     B, N, _ = policy.size()
     B, H, T, N = attn.size()
     if T == 1:
@@ -57,9 +57,9 @@ def softmax_with_policy(attn, policy, eps=1e-6):    # attn : [2, 687, 32, 32] po
         attn = torch.softmax(attn, dim=-1)
         return attn
     else:
-        attn_policy = policy.reshape(B, 1, 1, N)  # * policy.reshape(B, 1, N, 1)    [2, 1, 1, 687]
-        eye = torch.eye(N, dtype=attn_policy.dtype, device=attn_policy.device).view(1, 1, N, N) # [1, 1, 687, 687]
-        attn_policy = attn_policy + (1.0 - attn_policy) * eye   # [2, 1, 687, 687]
+        attn_policy = policy.reshape(B, 1, 1, N)  
+        eye = torch.eye(N, dtype=attn_policy.dtype, device=attn_policy.device).view(1, 1, N, N)
+        attn_policy = attn_policy + (1.0 - attn_policy) * eye  
         policy_bias = torch.zeros(B, 1, N, N, dtype=attn_policy.dtype).to(device=attn_policy.device)
         policy_bias.masked_fill_(attn_policy.logical_not(), float("-inf"))
         policy_bias.to(attn_policy.dtype)
@@ -96,18 +96,6 @@ def scaled_dot_product_attention_with_policy(query, key, value, policy, attn_mas
 def scaled_dot_product_attention(query, key, value, attn_mask=None, dropout_p=0.0, is_causal=False, scale=None) -> torch.Tensor:
     L, S = query.size(-2), key.size(-2)
     scale_factor = 1 / math.sqrt(query.size(-1)) if scale is None else scale
-    # attn_bias = torch.zeros(L, S, dtype=query.dtype)
-    # if is_causal:
-    #     assert attn_mask is None
-    #     temp_mask = torch.ones(L, S, dtype=torch.bool).tril(diagonal=0)
-    #     attn_bias.masked_fill_(temp_mask.logical_not(), float("-inf"))
-    #     attn_bias.to(query.dtype)
-
-    # if attn_mask is not None:
-    #     if attn_mask.dtype == torch.bool:
-    #         attn_bias.masked_fill_(attn_mask.logical_not(), float("-inf"))
-    #     else:
-    #         attn_bias += attn_mask
     attn_weight = query @ key.transpose(-2, -1) * scale_factor
     # attn_weight += attn_bias.to(query.device)
     attn_mask = attn_mask[:, :, -L:, -S:].to(query.device)       # if don't do this, after we cut the hidden_states, will be an error of shape
@@ -140,8 +128,6 @@ def index_points(points, idx):
 
 @torch.no_grad()
 def cluster_and_merge(x, cluster_num, origin_device):
-    # device = 'cpu'
-    # x = x.to(device)
     B, N, C = x.shape
     x = x.float()
 
@@ -151,9 +137,6 @@ def cluster_and_merge(x, cluster_num, origin_device):
     distance = (x1 - x2).norm(dim=-1, p=2)
     dist_matrix = distance / (C ** 0.5)
     del distance
-
-
-    # aaaaaa = torch.cdist(x, x, p=2) / (C ** 0.5)   # 使用p=2计算欧几里得距离
 
     # get local density
     dist_nearest, index_nearest = torch.topk(dist_matrix, k=cluster_num, dim=-1, largest=False)
@@ -197,7 +180,7 @@ def cluster_and_merge(x, cluster_num, origin_device):
     all_weight.index_add_(dim=0, index=idx.reshape(B * N),
                             source=token_weight.reshape(B * N, 1))      
     all_weight = all_weight + 1e-6
-    norm_weight = token_weight / all_weight[idx]        # 
+    norm_weight = token_weight / all_weight[idx]       
 
     # average token features
     x_merged = x.new_zeros(B * cluster_num, C)
@@ -220,14 +203,12 @@ def attn_postprocess_rank(self_attn_weights, v_token_start, v_token_num, text_to
     t_token_idx = t_token_idx[1] + text_token_start
     relation_vis_text = self_attn_weights[:, t_token_idx, v_token_start: v_token_start+v_token_num] # B, L2, L1
 
-    # rank = torch.linalg.matrix_rank(relation_vis_text.float()) # rank
-    rank = select_num   # FIXME  不用rank了
+    rank = select_num 
     relation_vis_text = relation_vis_text.mean(1) # B, L1
 
     s_flag = True # layer needs sparsification or not
     if v_token_num - rank != 0:
         mask = torch.zeros_like(relation_vis_text, dtype=bool)
-        # _, indices = torch.topk(relation_vis_text, min(int(rank.item() * scale + bias), v_token_num - 1), dim=1)
         _, indices = torch.topk(relation_vis_text, min(int(rank), v_token_num - 1), dim=1)   
         mask[0][indices] = 1
     else:

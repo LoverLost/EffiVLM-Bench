@@ -37,7 +37,7 @@ class LlavaQwenConfig(Qwen2Config):
     model_type = "llava_qwen"
 
 
-class LlavaQwenSparseModel(LlavaMetaModel, Qwen2SparseModel):      # 需要重写Qwen2SparseModel
+class LlavaQwenSparseModel(LlavaMetaModel, Qwen2SparseModel):  
     config_class = LlavaQwenConfig
 
     def __init__(self, config: Qwen2Config):
@@ -145,8 +145,6 @@ class LlavaQwenSparseForCausalLM(Qwen2SparseForCausalLM, LlavaMetaForCausalLM): 
         pre_prompt_length_list = [],
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
-        
-        # print('进入了generate, inputs_ids:{}'.format(inputs.shape))
         
         position_ids = kwargs.pop("position_ids", None)
         attention_mask = kwargs.pop("attention_mask", None)

@@ -121,11 +121,7 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
         modalities: Optional[List[str]] = ["image"],
         **kwargs,
     ) -> Union[GenerateOutput, torch.LongTensor]:
-        # args = kwargs.pop("args", None)
-        # assert args is not None, "需要在调用LlavaQwenForCausalLM时传入args参数"
-        # method = getattr(args, "method", None) 
         method = kwargs.pop("method", None)
-        # assert method is not None, "需要在调用LlavaQwenForCausalLM时传入method参数"
         position_ids = kwargs.pop("position_ids", None)
         attention_mask = kwargs.pop("attention_mask", None)
         if "inputs_embeds" in kwargs:
@@ -136,7 +132,7 @@ class LlavaQwenForCausalLM(Qwen2ForCausalLM, LlavaMetaForCausalLM):
                 if method.lower() == "vl-cache" or method.lower() == 'look-m' or method.lower() == 'fastv' or method.lower() == 'csp':
                     (inputs, position_ids, attention_mask, _, inputs_embeds, _, text_image_mask) = self.prepare_inputs_labels_mask_for_multimodal(inputs, position_ids, attention_mask, None, None, images, modalities, image_sizes=image_sizes)
                     # self.model.my_mask = my_mask 
-                    # transformers.models.qwen2.modeling_qwen2.Qwen2Attention.kv_cache_mask = kv_cache_mask  #  直接一步写到transformer库中，这样保证外部的代码和具体的transformer库完全解耦  
+                    # transformers.models.qwen2.modeling_qwen2.Qwen2Attention.kv_cache_mask = kv_cache_mask  
                     for layer in self.base_model.layers:
                         layer.self_attn.text_image_mask = text_image_mask
                     

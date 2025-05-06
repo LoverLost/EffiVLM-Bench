@@ -197,11 +197,7 @@ class Llava_OneVision_with_kvcache(lmms):
                 self._model = accelerator.prepare(self.model)
             else:
                 self._model = accelerator.prepare_model(self.model, evaluation_mode=True)
-                # self._model = self.model
                 
-            # for name,param in self._model.named_parameters():
-            #     print(name,param.dtype)
-            # exit()
             self.accelerator = accelerator
             if self.accelerator.is_local_main_process:
                 eval_logger.info(f"Using {accelerator.num_processes} devices with data parallelism")
@@ -741,10 +737,6 @@ class Llava_OneVision_with_kvcache(lmms):
                         3. image token is not specified in the context and there is image inputs, so we need to add it. In this case, we add the image token at the beginning of the context and add a new line.
                         4. For video tasks, we could add a <image> token or multiple <image> tokens for each frame in the context. This depends on the training strategy and should balance in test to decide which is better
                         """
-                        # if task_type == "image": # indeed in multi-image case, not the video in frames.
-                        #     image_tokens = [DEFAULT_IMAGE_TOKEN] * placeholder_count if isinstance(visual, list) else [DEFAULT_IMAGE_TOKEN]
-                        # elif task_type == "video":
-                        # image_tokens = [DEFAULT_IMAGE_TOKEN] * placeholder_count if self.token_strategy == "multiple" else [DEFAULT_IMAGE_TOKEN]
                         image_tokens = [DEFAULT_IMAGE_TOKEN] * placeholder_count
                         image_tokens = " ".join(image_tokens)
                         question = image_tokens + "\n" + context
@@ -809,7 +801,6 @@ class Llava_OneVision_with_kvcache(lmms):
                 try:
                     with torch.inference_mode():
                         cont = self.model.generate(input_ids, attention_mask=attention_masks, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
-                        # cont = self.model.generate(qwen_input_ids, pad_token_id=pad_token_ids, images=image_tensor, use_cache=self.use_cache, **gen_kwargs)
 
                     text_outputs = self.tokenizer.batch_decode(cont, skip_special_tokens=True)
                 except Exception as e:

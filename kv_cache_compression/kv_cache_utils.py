@@ -86,7 +86,6 @@ class DynamicCacheSplitHeadFlatten(Cache):
             return 0
         # TODO: return 1 to means has content for now
         return 1
-        # return max(map(lambda states: states.shape[-2], self.key_cache[layer_idx]))
 
     def get_max_length(self) -> Optional[int]:
         return None
@@ -204,16 +203,19 @@ def merge_kv(key_states, value_states, indices, window_size, merge):
 class StreamingLLMKVCluster():
     def __init__(self, query_len, budgets, window_size_budgets=0.1, merge=None):
         self.query_len = query_len
-        self.budgets = budgets  
+        self.budgets = budgets 
         self.max_capacity_prompt = max(1, int(query_len * budgets))
-        self.window_size_budgets = window_size_budgets  
+        self.window_size_budgets = window_size_budgets 
+
         self.window_size = max(1, int(self.max_capacity_prompt * window_size_budgets))
         self.merge = merge
 
     def reset(self, budgets, window_size_budgets=0.1, merge=None):
         self.query_len = None
+
         self.budgets = budgets
         self.window_size_budgets = window_size_budgets
+
         self.window_size = None
         self.max_capacity_prompt = None
         self.merge = merge
@@ -249,17 +251,21 @@ class StreamingLLMKVCluster():
 class H2OKVCluster():
     def __init__(self, query_len, budgets, window_size_budgets=0.1, head_adaptive=True, merge=None):
         self.query_len = query_len
+        
         self.budgets = budgets 
         self.max_capacity_prompt = max(1, int(query_len * budgets))
         self.window_size_budgets = window_size_budgets 
+
         self.window_size = max(1, int(self.max_capacity_prompt * window_size_budgets))
         self.head_adaptive = head_adaptive
         self.merge = merge
 
     def reset(self, budgets, window_size_budgets=0.1, head_adaptive=True, merge=None):
         self.query_len = None
+
         self.budgets = budgets 
         self.window_size_budgets = window_size_budgets
+
         self.window_size = None
         self.max_capacity_prompt = None
         self.merge = merge
@@ -275,13 +281,6 @@ class H2OKVCluster():
         attn_weights = torch.matmul( 
             query_states.float(), key_states_repeat.transpose(-2, -1).float()) / math.sqrt(head_dim)   # float32
 
-        # implementation of kv-factory
-        # dtype_min = torch.finfo(attn_weights.dtype).min
-        # mask = torch.triu(
-        #     torch.full((self.window_size, self.window_size), dtype_min, device=attn_weights.device),
-        #     diagonal=1,
-        # )
-        # attn_weights[:, :, -self.window_size:, -self.window_size:] += mask
         mask = torch.triu(
             torch.ones((q_len, q_len), dtype=torch.bool, device=query_states.device),
             diagonal=1
@@ -567,14 +566,13 @@ class LOOK_MCluster():
         self.layer_idx = layer_idx
         if self.budget is not None and self.hh_ratio is not None and self.recent_ratio is not None:
             raise ValueError(
-                'budget, hh_ratio, recent_ratio 不能同时设置。要么只设置budget,要么设置hh_ratio和recent_ratio')
+                'budget, hh_ratio, recent_ratio can not be set at the same time!')
         self.merge = merge
 
     def reset(self):
         self.importance = None
         self.seq_len = None
 
-    # FIXME 这里由于qwen2采用的是分组注意力机制，所以这里目前采用的方法就是取平均
     def get_importance(self, attn_score_cache, num_key_value_groups):
 
         num_new_tokens = attn_score_cache.shape[2]
@@ -582,26 +580,20 @@ class LOOK_MCluster():
         kv_heads = total_heads // num_key_value_groups
 
         if self.importance is None:
-            origin = attn_score_cache.sum(0).sum(1)   # [28, 7587]
+            origin = attn_score_cache.sum(0).sum(1)   
             self.importance = origin.view(
-                kv_heads, total_heads // kv_heads, -1).mean(dim=1)   # 改了一下分组注意力求的方式
+                kv_heads, total_heads // kv_heads, -1).mean(dim=1)  
         else:
             # breakpoint() # check here
-            raise NotImplementedError('LOOK-M方法不会进入这个分支，检查外部代码是否出现了问题')
-            # one_to_seven_score = attn_score_cache.sum(0).sum(1)
-            # aaa = one_to_seven_score.view(4, 7, -1).mean(dim=1)
-            # aaa[..., :-num_new_tokens] = aaa[..., :-num_new_tokens] + self.hh_score
-            # self.hh_score = aaa
-
-    def update(self, attn_score_cache, num_key_value_groups):   # 这里的attension score cache就是attension weights
-        # 判断new_seq_len是否大于1，即是否是prefill阶段
+            raise NotImplementedError('Look-m only processes the KV-cache during the prefill stage. Check the external code.')
+         
+    def update(self, attn_score_cache, num_key_value_groups):   
         if self.hh_ratio is not None and self.recent_ratio is not None and attn_score_cache.shape[-2] > 1:
-            # 309  列这个的目的就是个例子，为了和下面的代码注释对应，能知道每个数的根源是什么
             self.hh_size = max(1, int(attn_score_cache.shape[-1] * self.hh_ratio))
             self.recent_size = max(1, int(
-                attn_score_cache.shape[-1] * self.recent_ratio))  # 309
+                attn_score_cache.shape[-1] * self.recent_ratio))  
             self.budget = self.hh_size + self.recent_size
-            # self.image_save_ratio = self.hh_ratio
+            
         elif self.budget is not None:
             self.hh_size = max(1, int(attn_score_cache.shape[-1] * self.budget * 0.9))
             self.recent_size = max(1, int(
@@ -609,10 +601,8 @@ class LOOK_MCluster():
             self.budget = self.hh_size + self.recent_size
         self.get_importance(attn_score_cache, num_key_value_groups)
 
-    # attn_score_cache是[bsz, num_heads, new_seq_len, total_seq_len]
     def update_kv(self, key_states, query_states, value_states, attention_mask, num_key_value_groups, text_mask, head_dim, dropout, training, origin_key_states, origin_value_states, merge=True):
-        assert len(text_mask) == 1, '当前只能处理一个batch'
-        
+        assert len(text_mask) == 1, 'only support batch_size == 1'
         q_len = query_states.shape[-2]
 
         '''
@@ -640,36 +630,16 @@ class LOOK_MCluster():
             attn_score_cache = nn.functional.dropout(
             attn_score_cache, p=dropout, training=training)
 
-        # if self.hh_ratio is not None and attn_score_cache.shape[-2]>1:  # 判断new_seq_len是否大于1，即是否是prefill阶段
-        #     self.hh_size = int(attn_score_cache.shape[-1] * self.hh_ratio)  # 309  列这个的目的就是个例子，为了和下面的代码注释对应，能知道每个数的根源是什么
-        #     self.recent_size = int(attn_score_cache.shape[-1] * self.recent_ratio)  # 309
-        #     self.cache_size = self.hh_size + self.recent_size
-        #     self.image_save_ratio = self.hh_ratio
-
-        # self.get_importance(attn_score_cache)
-
         self.update(attn_score_cache, num_key_value_groups)
         del attn_score_cache
-        # [bsz, num_kv_heads, seq_len, kv_head_dim]
         seq_len = origin_key_states.size(self.k_seq_dim)
-
-        if seq_len <= self.budget:   # 直接返回
+        if seq_len <= self.budget:  
             return origin_key_states, origin_value_states, None, None
-
-        # hh-selection
-        # [1, 32, seq_len, 128]
         bsz, num_heads, _, head_dim = origin_key_states.shape
+
         ################################# only-image######################################
-        # image_position = self.image_position.clone()  # list [ 1, 99, 23423, 34235435]
-        # for i in range(self.image_position.shape[0]):   # FIXME 算图片偏移
-        #     image_position[i] = image_position[i] + 575 * i
-        # anti_image_mask = torch.full((self.hh_score.shape[0], self.hh_score.shape[1]), 0)
-        # for i in range(self.image_position.shape[0]):
-        #     anti_image_mask[:, image_position[i]:image_position[i]+576] = -65516
         make_image_less_important = torch.full(
-            (self.importance.shape[0], self.importance.shape[1]), 0)  # FIXME 换成了我的写法
-        # anti_image_mask = [[0 if item is True else -65536 for item in my_mask[0]]]
-        # True表示这个位置需要被“去掉”
+            (self.importance.shape[0], self.importance.shape[1]), 0) 
         if type(text_mask[0]) == torch.Tensor:
             text_image_mask = text_mask[0].tolist()
         else:
@@ -680,40 +650,31 @@ class LOOK_MCluster():
             device=self.importance.device, dtype=self.importance.dtype)
         make_image_less_important[:, -self.recent_size:] = -10000
         self.importance = self.importance + \
-            make_image_less_important  # 其实根本不是按论文中说的那么做的。没有取最大
+            make_image_less_important  
         _, keep_topk = torch.topk(
-            self.importance[:, :-self.recent_size], self.hh_size, dim=-1)  # keep_topk是[4, 758]
+            self.importance[:, :-self.recent_size], self.hh_size, dim=-1)  
         keep_topk = keep_topk.sort().values
         # mask those keeping tok
-        self.importance.scatter_(1, keep_topk, 10000)  # 沿着第1维，把所有留下的token置为0
-        self.importance[:, -self.recent_size:] = 10000  # recent 一定会被留下
-        mask = self.importance == 10000  # 是个bool矩阵，true就表示留下来
+        self.importance.scatter_(1, keep_topk, 10000)  
+        self.importance[:, -self.recent_size:] = 10000 
+        mask = self.importance == 10000 
         expanded_mask = mask.unsqueeze(
-            0).unsqueeze(-1).expand_as(origin_key_states)    # 【1， 4， 7587， 128】
+            0).unsqueeze(-1).expand_as(origin_key_states) 
         k_hh_recent = torch.masked_select(
             origin_key_states, expanded_mask).view(bsz, num_heads, -1, head_dim)
         v_hh_recent = torch.masked_select(
             origin_value_states, expanded_mask).view(bsz, num_heads, -1, head_dim)
-        ################## only-image#################################
         ############################### only-image-merge###################################
         # applying merge here
         if self.merge:
             k_hh_pruned = torch.masked_select(origin_key_states, ~expanded_mask).view(
-                bsz, num_heads, -1, head_dim)  # [1, 32, 3098 - 309 * 2, 128]
-            # with torch.autocast(device_type="cuda", dtype=torch.float32):
+                bsz, num_heads, -1, head_dim)  
             k_hh_pruned = k_hh_pruned.float()
             k_hh_recent = k_hh_recent.float()
             similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(
-                k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2))  # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
+                k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) 
             max_values, max_indices = similarity.max(
-                dim=-1)  # max_indices是[1, 4, 6071]
-
-            # pivot merge
-            # similarity = (k_hh_pruned / torch.norm(k_hh_pruned, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((k_hh_recent / (torch.norm(k_hh_recent, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2)) # cosin  [1, 32, 3098 - 309 * 2, 309 * 2]
-            # max_values, max_indices = similarity.max(dim=-1)  # max_indices是[1, 4, 6071]
-            # if self.layer_idx == 0:
-            #     print('共有{}个token和小于3的（sink）相似度最高'.format(str((max_indices[0][0] < 3).sum() + (max_indices[0][1] < 3).sum() + (max_indices[0][2] < 3).sum() + (max_indices[0][3] < 3).sum())))
-            # [1, 4, 6071, 128]。
+                dim=-1) 
             merged_indices = max_indices.unsqueeze(-1).repeat(1, 1, 1, 128)
             k_hh_selected = torch.gather(
                 input=k_hh_recent, dim=2, index=merged_indices)
@@ -729,16 +690,10 @@ class LOOK_MCluster():
             v_hh_merged = (v_hh_pruned + v_hh_selected)/2
             v_hh_recent = torch.scatter_reduce(
                 input=v_hh_recent.float(), dim=2, index=merged_indices, src=v_hh_merged.float(), reduce='mean', include_self=True).to(torch.bfloat16)
-        #################################### only-image-merge#############################
-        # if self.layer_idx == 0:
-        #     print('压缩后的长度为： ', end='')
-        #     print(k_hh_recent.shape[-2])
-        #     print('*'*30)
-
-        return k_hh_recent, v_hh_recent, None, None    # 最后多加了两个参数，为了分析用
+        return k_hh_recent, v_hh_recent
 
     def update_kv_only_merge_visual(self, key_states, query_states, value_states, attention_mask, num_key_value_groups, text_mask, head_dim, dropout, training, origin_key_states, origin_value_states, merge=True):
-        assert len(text_mask) == 1, '当前只能处理一个batch'
+        assert len(text_mask) == 1, 'only support batch_size == 1'
         
         q_len = query_states.shape[-2]
 
@@ -769,16 +724,15 @@ class LOOK_MCluster():
 
         self.update(attn_score_cache)
         del attn_score_cache
-        # [bsz, num_kv_heads, seq_len, kv_head_dim]
         seq_len = origin_key_states.size(self.k_seq_dim)
 
-        if seq_len <= self.budget:   # 直接返回
+        if seq_len <= self.budget: 
             return origin_key_states, origin_value_states, None, None
         
         bsz, num_heads, _, head_dim = origin_key_states.shape
         ################################# only-image######################################
         make_image_less_important = torch.full(
-            (self.importance.shape[0], self.importance.shape[1]), 0)  # FIXME 换成了我的写法
+            (self.importance.shape[0], self.importance.shape[1]), 0) 
         if type(text_mask[0]) == torch.Tensor:
             text_image_mask = text_mask[0].tolist()
         else:
@@ -791,52 +745,45 @@ class LOOK_MCluster():
         self.importance = self.importance + \
             make_image_less_important 
         _, keep_topk = torch.topk(
-            self.importance[:, :-self.recent_size], self.hh_size, dim=-1)  # keep_topk是[4, 758]
-        keep_topk = keep_topk.sort().values   # 除了recent window，留下的token在原始序列里的下标
-
-        self.importance.scatter_(1, keep_topk, 10000)  # 沿着第1维，把所有留下的token置为0
-        self.importance[:, -self.recent_size:] = 10000  # recent 一定会被留下
-        mask = self.importance == 10000  # 是个bool矩阵，true就表示留下来
+            self.importance[:, :-self.recent_size], self.hh_size, dim=-1) 
+        keep_topk = keep_topk.sort().values  
+        self.importance.scatter_(1, keep_topk, 10000)  
+        self.importance[:, -self.recent_size:] = 10000  
+        mask = self.importance == 10000 
         expanded_mask = mask.unsqueeze(
             0).unsqueeze(-1).expand_as(origin_key_states)  
         k_hh_recent = torch.masked_select(
             origin_key_states, expanded_mask).view(bsz, num_heads, -1, head_dim)
         v_hh_recent = torch.masked_select(
             origin_value_states, expanded_mask).view(bsz, num_heads, -1, head_dim)
-        ################## only-image#################################
         ############################### only-image-merge###################################
         k_hh_pruned = torch.masked_select(origin_key_states, ~expanded_mask).view(
             bsz, num_heads, -1, head_dim)  # pruned tokens
         v_hh_pruned = torch.masked_select(origin_value_states, ~expanded_mask).view(
             bsz, num_heads, -1, head_dim)
-
-        # 在保留的tokens中区分text和image
-        visual_tokens_mask = torch.tensor(image_mask, device=mask.device)[keep_topk]  # [4, 234]
+        
+        visual_tokens_mask = torch.tensor(image_mask, device=mask.device)[keep_topk]  
         num_heads = visual_tokens_mask.shape[0]
         padding = torch.tensor(image_mask[-self.recent_size:], device=mask.device).unsqueeze(0).repeat(num_heads, 1) 
-        visual_tokens_mask = torch.cat([visual_tokens_mask, padding], dim=1)   # [4, 260]
+        visual_tokens_mask = torch.cat([visual_tokens_mask, padding], dim=1)   
         visual_tokens_mask = visual_tokens_mask.unsqueeze(0).unsqueeze(-1).expand(bsz, num_heads, -1, head_dim)
         text_tokens_mask = ~visual_tokens_mask
         
-        # 在pruned tokens中区分text和image 
-        pruned_tokens_indices = (~mask).nonzero(as_tuple=True)[1].view(mask.shape[0], -1)  # [4, 390]
+        pruned_tokens_indices = (~mask).nonzero(as_tuple=True)[1].view(mask.shape[0], -1)  
         pruned_visual_mask = torch.tensor(image_mask, device=mask.device)[pruned_tokens_indices]
         pruned_visual_mask = pruned_visual_mask.unsqueeze(0).unsqueeze(-1).expand(bsz, num_heads, -1, head_dim)
         pruned_text_mask = ~pruned_visual_mask
 
-        # 分离kept tokens中的text和image
         k_hh_recent_visual = torch.masked_select(k_hh_recent, visual_tokens_mask).view(bsz, num_heads, -1, head_dim)
         v_hh_recent_visual = torch.masked_select(v_hh_recent, visual_tokens_mask).view(bsz, num_heads, -1, head_dim)
         k_hh_recent_text = torch.masked_select(k_hh_recent, text_tokens_mask).view(bsz, num_heads, -1, head_dim)
         v_hh_recent_text = torch.masked_select(v_hh_recent, text_tokens_mask).view(bsz, num_heads, -1, head_dim)
 
-        # 分离pruned tokens中的text和image
         k_hh_pruned_visual = torch.masked_select(k_hh_pruned, pruned_visual_mask).view(bsz, num_heads, -1, head_dim)
         v_hh_pruned_visual = torch.masked_select(v_hh_pruned, pruned_visual_mask).view(bsz, num_heads, -1, head_dim)
         k_hh_pruned_text = torch.masked_select(k_hh_pruned, pruned_text_mask).view(bsz, num_heads, -1, head_dim)
         v_hh_pruned_text = torch.masked_select(v_hh_pruned, pruned_text_mask).view(bsz, num_heads, -1, head_dim)
-        
-        # 处理visual tokens
+
         if k_hh_recent_visual.shape[2] != 0 and k_hh_pruned_visual.shape[2] != 0:
             k_hh_pruned_visual = k_hh_pruned_visual.float()
             k_hh_recent_visual = k_hh_recent_visual.float()
@@ -847,8 +794,7 @@ class LOOK_MCluster():
             
             max_indices_visual = similarity_visual.max(dim=-1).indices
             merged_indices_visual = max_indices_visual.unsqueeze(-1).repeat(1, 1, 1, 128)
-            
-            # 合并visual tokens
+
             k_hh_selected_visual = torch.gather(input=k_hh_recent_visual, dim=2, index=merged_indices_visual)
             k_hh_merged_visual = (k_hh_pruned_visual + k_hh_selected_visual)/2
             k_hh_recent_visual = torch.scatter_reduce(
@@ -871,7 +817,6 @@ class LOOK_MCluster():
                 include_self=True
             ).to(torch.bfloat16)
 
-        # 处理text tokens
         if k_hh_recent_text.shape[2] != 0 and k_hh_pruned_text.shape[2] != 0:
             k_hh_pruned_text = k_hh_pruned_text.float()
             k_hh_recent_text = k_hh_recent_text.float()
@@ -882,8 +827,7 @@ class LOOK_MCluster():
             
             max_indices_text = similarity_text.max(dim=-1).indices
             merged_indices_text = max_indices_text.unsqueeze(-1).repeat(1, 1, 1, 128)
-            
-            # 合并text tokens
+
             k_hh_selected_text = torch.gather(input=k_hh_recent_text, dim=2, index=merged_indices_text)
             k_hh_merged_text = (k_hh_pruned_text + k_hh_selected_text)/2
             k_hh_recent_text = torch.scatter_reduce(
@@ -906,14 +850,13 @@ class LOOK_MCluster():
                 include_self=True
             ).to(torch.bfloat16)
 
-        # 将更新后的visual和text tokens放回k_hh_recent
         k_hh_recent = torch.masked_scatter(k_hh_recent, visual_tokens_mask, k_hh_recent_visual.flatten())
         k_hh_recent = torch.masked_scatter(k_hh_recent, text_tokens_mask, k_hh_recent_text.flatten())
         v_hh_recent = torch.masked_scatter(v_hh_recent, visual_tokens_mask, v_hh_recent_visual.flatten())
         v_hh_recent = torch.masked_scatter(v_hh_recent, text_tokens_mask, v_hh_recent_text.flatten())
         
         
-        return k_hh_recent, v_hh_recent, None, None    # 最后多加了两个参数，为了分析用
+        return k_hh_recent, v_hh_recent
 
 
 
@@ -929,7 +872,9 @@ class SnapKVCluster():
         self.query_len = query_len
         self.budgets = budgets 
         self.max_capacity_prompt = max(1, int(query_len * budgets))
+
         self.window_size_budgets = window_size_budgets
+
         self.window_size = max(1, int(self.max_capacity_prompt * window_size_budgets))
         self.head_adaptive = head_adaptive
         self.pooling = pooling
@@ -945,8 +890,10 @@ class SnapKVCluster():
               merge=None):
 
         self.query_len = None
+
         self.budgets = budgets 
         self.window_size_budgets = window_size_budgets
+
         self.window_size = None
         self.max_capacity_prompt = None
         self.merge = merge
@@ -1127,10 +1074,6 @@ class pyramidkvCluster():
                 self.max_capacity_prompt - self.window_size, dim=-1).indices
             indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
 
-            # if self.merge is not None:
-            #     key_states, value_states = merge_kv(key_states, value_states, indices, self.window_size, self.merge)
-            #     return key_states, value_states
-
             k_past_compress = key_states[:, :, :-
                                          self.window_size, :].gather(dim=2, index=indices)
             v_past_compress = value_states[:, :, :-
@@ -1175,11 +1118,6 @@ class pyramidkvCluster():
                 raise ValueError('Pooling method not supported')
             indices = attn_cache.topk(max_capacity_prompt, dim=-1).indices
             indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
-
-            # if self.merge is not None:
-            #     key_states, value_states = merge_kv(key_states, value_states, indices, self.window_size, self.merge)
-            #     return key_states, value_states
-
             k_past_compress = key_states[:, :, :-
                                          self.window_size, :].gather(dim=2, index=indices)
             v_past_compress = value_states[:, :, :-
@@ -1251,7 +1189,6 @@ class CSPCluster():
                 selection_func = 'one-softmax'
 
                 attn_weights = self.apply_selection_function(attn_weights, selection_func)
-                # attn_weights_past = attn_weights[:, :, -self.recent_size:, :-self.recent_size]
 
                 q_observe_recent = self.recent_size
                 if self.kv_recent_bias != 1:
@@ -1262,7 +1199,6 @@ class CSPCluster():
 
                 attn_weights_past = attn_weights[:, :, -q_observe_recent:, :-kv_recent_size] 
                 
-                # 扩展到 [B, H, Lq, Lk]
                 query_img_mask = img_mask[-q_observe_recent:].view(1, 1, -1).expand(bsz, num_heads, -1)  # [B, H, Lq]
                 # query_img_mask = img_mask.view(1, 1, -1).expand(bsz, num_heads, -1)  # [B, H, Lq]
                 key_img_mask = img_mask[:-kv_recent_size].view(1, 1, -1).expand(bsz, num_heads, -1)  # [B, H, Lk]
@@ -1371,7 +1307,6 @@ class RandomCluster():
 
         select_from_len = seq_len - window_size
 
-        # 为每个batch和每个head生成随机索引，并排序以保持相对位置
         indices = torch.stack([
             torch.sort(torch.randperm(select_from_len, device=origin_key_states.device)[:other_size])[0]
             for _ in range(bsz * num_heads)
@@ -1383,10 +1318,8 @@ class RandomCluster():
 
         indices = torch.cat([indices, last_indices], dim=2)
         
-        # 扩展indices以匹配head_dim维度
         indices = indices.unsqueeze(-1).expand(-1, -1, -1, head_dim)
 
-        # 使用gather收集选中的token
         selected_key_states = torch.gather(origin_key_states, dim=2, index=indices)
         selected_value_states = torch.gather(origin_value_states, dim=2, index=indices)
 

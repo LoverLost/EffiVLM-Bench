@@ -398,7 +398,7 @@ class LLavaLLMPruner(LayerWiseBasePruner):
 
         sparsity_dict = self.get_sparsity(
             sparsity_ratio,
-            sparsity_ratio_granularity=self.sparsity_ratio_granularity   # maybe have bugs, fix later @mhma    check this done.
+            sparsity_ratio_granularity=self.sparsity_ratio_granularity 
         )
 
         self._model = self._prune(
@@ -534,7 +534,7 @@ if __name__ == "__main__":
         num_samples=args.num_samples,
         num_data_first_stage=args.num_data_first_stage,
         # sparsity_ratio_granularity = args.sparsity_ratio_granularity,
-        prune_spec=[("model.layers", 0.5)],  # not used @mhma 0112
+        prune_spec=[("model.layers", 0.5)],  
         device="cuda:0",
         attn_implementation="flash_attention_2",
         pruner_name=pruner_name,

@@ -47,7 +47,7 @@ def siglip_attention_forward( self,
         output_attentions: Optional[bool] = False,
     ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
 
-    if self.layer_idx == 24:    # change here
+    if self.layer_idx == 24:    
         self.attn_weights = None
 
     batch_size, q_len, _ = hidden_states.size()
@@ -58,11 +58,11 @@ def siglip_attention_forward( self,
 
     query_states = query_states.view(batch_size, q_len, self.num_heads, self.head_dim).transpose(1, 2)
     key_states = key_states.view(batch_size, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-    raw_key_states = key_states.float().clone()              # change
+    raw_key_states = key_states.float().clone()           
     value_states = value_states.view(batch_size, q_len, self.num_heads, self.head_dim).transpose(1, 2)
 
     k_v_seq_len = key_states.shape[-2]
-    attn_weights = torch.matmul(query_states.float(), key_states.transpose(2, 3).float()) * self.scale   # change
+    attn_weights = torch.matmul(query_states.float(), key_states.transpose(2, 3).float()) * self.scale 
 
     if attn_weights.size() != (batch_size, self.num_heads, q_len, k_v_seq_len):
         raise ValueError(f"Attention weights should be of size {(batch_size, self.num_heads, q_len, k_v_seq_len)}, but is" f" {attn_weights.size()}")
@@ -75,10 +75,10 @@ def siglip_attention_forward( self,
     # upcast attention to fp32
     attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32)
 
-    if self.layer_idx == 24:               # FIXME   change here. 
+    if self.layer_idx == 24:             
         self.attn_weights = attn_weights
     
-    attn_weights = attn_weights.to(query_states.dtype)       # change
+    attn_weights = attn_weights.to(query_states.dtype)     
     attn_weights = nn.functional.dropout(attn_weights, p=self.dropout, training=self.training)
     attn_output = torch.matmul(attn_weights, value_states)
 
@@ -131,9 +131,11 @@ def siglip_EncoderLayer_forward(self,
         if output_attentions:
             outputs += (attn_weights,)
 
-        if self.layer_idx == 24:   # the second to last floor
+
+        if self.layer_idx == 24:   
+
             self.metric = metric
-            self.hidden_states = hidden_states              # change
+            self.hidden_states = hidden_states          
 
         return outputs
 
@@ -143,14 +145,8 @@ def siglip_vision_tower_forward(self, images):
         raise NotImplementedError("VisionZip does not support batch inference")
 
     else:
-        # image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=True)
-        # image_features = image_forward_outs.hidden_states[-1].to(images.dtype)
-        # assert image_features.shape[-2] == 729
-
         image_forward_outs = self.vision_tower(images.to(device=self.device, dtype=self.dtype), output_hidden_states=False, output_attentions=False)
-        # attn_weights  = image_forward_outs.attentions[-2]
-        attn_weights = self.vision_tower.vision_model.encoder.layers[-2].self_attn.attn_weights     # change
-        # hidden_states = image_forward_outs.hidden_states[-2]
+        attn_weights = self.vision_tower.vision_model.encoder.layers[-2].self_attn.attn_weights    
         hidden_states = self.vision_tower.vision_model.encoder.layers[-2].hidden_states
         metric = self.vision_tower.vision_model.encoder.layers[-2].metric   # [3, 729, 72]
         per_patch_token_num = metric.shape[1]
@@ -159,43 +155,40 @@ def siglip_vision_tower_forward(self, images):
 
         ## Dominant Visual Tokens
         attention_sum = attn_weights.mean(dim=1).mean(dim=1)  
-        # topk_indices = attention_sum.topk(dominant_num, dim=1).indices + 1
-        # all_indices = torch.cat([torch.zeros((hidden_states.shape[0], 1), dtype=topk_indices.dtype, device=topk_indices.device), topk_indices], dim=1)
-        
         all_indices = attention_sum.topk(dominant_num, dim=1).indices
-        mask = torch.ones_like(hidden_states[:, :, 0], dtype=torch.bool, device=metric.device).scatter_(1, all_indices, False)  # [3, 729] 
+
+        mask = torch.ones_like(hidden_states[:, :, 0], dtype=torch.bool, device=metric.device).scatter_(1, all_indices, False) 
+
         dominant_tokens = hidden_states.masked_select(~mask.unsqueeze(-1)).view(hidden_states.shape[0], dominant_num, hidden_states.shape[2])
         
         ### Filter
-        metric_filtered = metric[mask].view(hidden_states.shape[0], hidden_states.shape[1] - dominant_num, metric.shape[2])  # [3, 675, 72]
-
+        metric_filtered = metric[mask].view(hidden_states.shape[0], hidden_states.shape[1] - dominant_num, metric.shape[2])  
         hidden_states_filtered = hidden_states.masked_select(mask.unsqueeze(-1)).view(hidden_states.shape[0], hidden_states.shape[1] - dominant_num, hidden_states.shape[2])  # [3, 675, 1152]
-        
         metric_normalized = metric_filtered / metric_filtered.norm(dim=-1, keepdim=True) 
 
         ## Contextual Visual Tokens
         step = max(1, metric_normalized.shape[1] // contextual_num)
-        target_indices = torch.arange(0, metric_normalized.shape[1], step, device=metric_normalized.device)[:contextual_num]
-        target_tokens = metric_normalized[:, target_indices, :]  # [3, 10, 72]
 
-        tokens_to_merge = metric_normalized[:, ~torch.isin(torch.arange(metric_normalized.shape[1], device=metric_normalized.device), target_indices), :]   # [3, 665, 72]
-        similarity = torch.bmm(tokens_to_merge.float(), target_tokens.transpose(1, 2).float())   # [3, 665, 10]    FIXME  change here
+        target_indices = torch.arange(0, metric_normalized.shape[1], step, device=metric_normalized.device)[:contextual_num] 
+        target_tokens = metric_normalized[:, target_indices, :]  
+
+
+        tokens_to_merge = metric_normalized[:, ~torch.isin(torch.arange(metric_normalized.shape[1], device=metric_normalized.device), target_indices), :] 
+        similarity = torch.bmm(tokens_to_merge.float(), target_tokens.transpose(1, 2).float()) 
         assign_one_hot = torch.zeros(tokens_to_merge.shape[0], tokens_to_merge.shape[1], contextual_num, dtype=hidden_states_filtered.dtype, device=metric_normalized.device)
         assign_one_hot.scatter_(2, similarity.argmax(dim=2).unsqueeze(-1), 1)
-        counts = assign_one_hot.sum(dim=1).clamp(min=1).unsqueeze(-1)
+
+        counts = assign_one_hot.sum(dim=1).clamp(min=1).unsqueeze(-1)      
+
         hidden_to_merge = hidden_states_filtered[:, ~torch.isin(torch.arange(hidden_states_filtered.shape[1], device=hidden_states_filtered.device), target_indices), :]
-        aggregated_hidden = (torch.bmm(assign_one_hot.transpose(1, 2).float(), hidden_to_merge.float()) / counts).to(torch.bfloat16) # [3, 10, 1152]   FIXME  change here
-        target_hidden = hidden_states_filtered[:, target_indices, :]  # [3, 10, 1152]
-        
+        aggregated_hidden = (torch.bmm(assign_one_hot.transpose(1, 2).float(), hidden_to_merge.float()) / counts).to(torch.bfloat16) 
+        target_hidden = hidden_states_filtered[:, target_indices, :]  
         contextual_tokens = target_hidden + aggregated_hidden
 
         # Merge with target hidden states and concatenate
-        hidden_states_save = torch.cat([dominant_tokens, contextual_tokens], dim=1).to(images.dtype)  # [3， 64， 1152]
+        hidden_states_save = torch.cat([dominant_tokens, contextual_tokens], dim=1).to(images.dtype)  
 
     return hidden_states_save, all_indices
-
-    # return image_features
-
 
 def encode_images_visionzip(self, images):
     image_features, keep_idx = self.get_model().get_vision_tower()(images)
@@ -272,14 +265,14 @@ def prepare_inputs_labels_for_multimodal_visionzip(self, input_ids, position_ids
 
         concat_images = torch.cat([image for image in images_list], dim=0)
         split_sizes = [image.shape[0] for image in images_list]   # num_patches for every img
-        encoded_image_features, keep_idx = self.encode_images_visionzip(concat_images)       # FIXME [10, 729, 3584]  [10, 64, xx]
+        encoded_image_features, keep_idx = self.encode_images_visionzip(concat_images)    
         
 
         encoded_image_features = torch.split(encoded_image_features, split_sizes)
         keep_idx = torch.split(keep_idx, split_sizes)
         image_features = []
         contextual_features = []
-        for idx, image_feat in enumerate(encoded_image_features):   # [5, 37, 3584]
+        for idx, image_feat in enumerate(encoded_image_features):   
             if idx in video_idx_in_batch:
                 image_features.append(self.get_2dPool(image_feat))
             else:
@@ -300,9 +293,9 @@ def prepare_inputs_labels_for_multimodal_visionzip(self, input_ids, position_ids
                 mask.scatter_(1, cur_keep_idx_sorted_restore, True) 
 
                 fake_image[mask] = dominant_feature.reshape(-1, hidden_size)  
-                
-                
-                image_features.append(fake_image)   # FIXME change here
+
+                image_features.append(fake_image)  
+
 
         mm_patch_merge_type = getattr(self.config, "mm_patch_merge_type", "flat")   # spatial_unpad
         image_aspect_ratio = getattr(self.config, "image_aspect_ratio", "square")   # anyres_max_9
@@ -337,14 +330,11 @@ def prepare_inputs_labels_for_multimodal_visionzip(self, input_ids, position_ids
                                     concat_slow_fater_token.append(torch.cat((faster_video_feature[_], self.model.faster_token[None].to(image_feature.device)), dim=0))
                             # import pdb; pdb.set_trace()
                             image_feature = torch.cat(concat_slow_fater_token)
-
-                            # print("!!!!!!!!!!!!")
                     
                         new_image_features.append(image_feature)
                     elif mm_newline_position == "frame":
                         # Frame-wise
                         image_feature = self.add_token_per_frame(image_feature)
-
                         new_image_features.append(image_feature.flatten(0, 1))
                         
                     elif mm_newline_position == "one_token":
@@ -382,7 +372,7 @@ def prepare_inputs_labels_for_multimodal_visionzip(self, input_ids, position_ids
                         except Exception as e:
                             rank0_print(f"Error: {e}")
                             num_patch_width, num_patch_height = 2, 2
-                        image_feature = image_feature.view(num_patch_height, num_patch_width, height, width, -1)   # [3, 3, 27, 27, 3584]
+                        image_feature = image_feature.view(num_patch_height, num_patch_width, height, width, -1)   
                     else:
                         image_feature = image_feature.view(2, 2, height, width, -1)
 
@@ -646,15 +636,6 @@ def token_prune_merge_advanced_prumerge_plus(self, images, multi_images, if_adap
     attn = (desired_layer_q.float() @ desired_layer_k.transpose(-2, -1).float()) * C ** -0.5
     attn = nn.functional.softmax(attn, dim=-1, dtype=torch.float32)
 
-    # cls_attn = attn[:, 0, 1:] 
-    # get cls attention 
-    # if multi_images:
-        # calculate different cls attention for different images
-        # cls_attn = torch.mean(attn, dim=1)
-    # else:
-    #     # for single image, calculate base image attention cls
-    #     cls_attn = torch.mean(attn[0], dim=0).unsqueeze(0)
-
     # Regardless of whether it is a single image use anyres or multiple images, take the average
     cls_attn = torch.mean(attn, dim=1)
     
@@ -699,12 +680,9 @@ def token_prune_merge_advanced_prumerge_plus(self, images, multi_images, if_adap
             concatenated_tensor = torch.cat([iqr_idx[i], filtered_sequence])[:budgets_token]
             idx[i] = concatenated_tensor    
     else:
-        _, idx = torch.topk(cls_attn, budgets_token, dim=1, largest=True)  # [B, left_tokens] , sorted=True
+        _, idx = torch.topk(cls_attn, budgets_token, dim=1, largest=True)  
     
     index = idx.unsqueeze(-1).expand(-1, -1, C)  # [B, left_tokens, C]
-
-    # Key_wo_cls = desired_layer_k[:, 1:]  # [B, N-1, C]
-
     x_others = torch.gather(image_features, dim=1, index=index)  # [B, left_tokens, C]
     Key_others = torch.gather(desired_layer_k, dim=1, index=index)  # [B, left_tokens, C]
     x_others_attn = torch.gather(cls_attn, dim=1, index=idx)  
@@ -715,11 +693,6 @@ def token_prune_merge_advanced_prumerge_plus(self, images, multi_images, if_adap
 
     Key_others_norm = nn.functional.normalize(Key_others, p=2, dim=-1)
     non_topk_Key_norm = nn.functional.normalize(non_topk_Key, p=2, dim=-1)
-
-    # cos_sim = torch.bmm(Key_others_norm, non_topk_Key_norm.transpose(1, 2)) # [B, left_tokens, N-1-left_tokens]
-
-    # _, cluster_indices = torch.topk(cos_sim, k=4, dim=2, largest=True)
-
     B, left_tokens, C = x_others.size()
     updated_x_others = torch.zeros_like(x_others)
 
@@ -793,7 +766,7 @@ def prepare_inputs_labels_for_multimodal_prumerge_plus(self, input_ids, position
         keep_idx = torch.split(keep_idx, split_sizes)
         image_features = []
         contextual_features = []
-        for idx, image_feat in enumerate(encoded_image_features):   # [5, 37, 3584]
+        for idx, image_feat in enumerate(encoded_image_features):  
             if idx in video_idx_in_batch:
                 image_features.append(self.get_2dPool(image_feat))
             else:
@@ -821,8 +794,9 @@ def prepare_inputs_labels_for_multimodal_prumerge_plus(self, input_ids, position
                 mask.scatter_(1, cur_keep_idx_sorted_restore, True) 
 
                 fake_image[mask] = dominant_feature.reshape(-1, hidden_size)  
-                
-                image_features.append(fake_image)   # FIXME change here
+
+                image_features.append(fake_image)   
+
 
         mm_patch_merge_type = getattr(self.config, "mm_patch_merge_type", "flat")   # spatial_unpad
         image_aspect_ratio = getattr(self.config, "image_aspect_ratio", "square")   # anyres_max_9
@@ -858,8 +832,6 @@ def prepare_inputs_labels_for_multimodal_prumerge_plus(self, input_ids, position
                             # import pdb; pdb.set_trace()
                             image_feature = torch.cat(concat_slow_fater_token)
 
-                            # print("!!!!!!!!!!!!")
-                    
                         new_image_features.append(image_feature)
                     elif mm_newline_position == "frame":
                         # Frame-wise
@@ -902,7 +874,7 @@ def prepare_inputs_labels_for_multimodal_prumerge_plus(self, input_ids, position
                         except Exception as e:
                             rank0_print(f"Error: {e}")
                             num_patch_width, num_patch_height = 2, 2
-                        image_feature = image_feature.view(num_patch_height, num_patch_width, height, width, -1)   # [3, 3, 27, 27, 3584]
+                        image_feature = image_feature.view(num_patch_height, num_patch_width, height, width, -1) 
                     else:
                         image_feature = image_feature.view(2, 2, height, width, -1)
 
@@ -973,7 +945,6 @@ def prepare_inputs_labels_for_multimodal_prumerge_plus(self, input_ids, position
     if labels is None:
         labels = torch.full_like(input_ids, IGNORE_INDEX)
 
-    # remove the padding using attention_mask -- FIXME
     _input_ids = input_ids
     input_ids = [cur_input_ids[cur_attention_mask] for cur_input_ids, cur_attention_mask in zip(input_ids, attention_mask)]
     labels = [cur_labels[cur_attention_mask] for cur_labels, cur_attention_mask in zip(labels, attention_mask)]

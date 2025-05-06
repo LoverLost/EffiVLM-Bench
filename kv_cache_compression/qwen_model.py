@@ -189,9 +189,6 @@ def qwen_attention_forward_streamingLLM(
                 key_states_compress, value_states_compress, self.layer_idx, cache_kwargs)
         else:
             self.kv_seq_len += q_len
-
-            # key_states_compress, value_states_compress = self.kv_cluster.update_kv(key_states, query_states, value_states, attention_mask, self.num_key_value_groups)
-            # key_states, value_states = past_key_value.reupdate(key_states, value_states, self.layer_idx, cache_kwargs)
             key_states, value_states = past_key_value.update(
                 key_states, value_states, self.layer_idx, cache_kwargs)
         past_key_value._seen_tokens = self.kv_seq_len
@@ -1053,14 +1050,10 @@ def qwen_attention_forward_LOOK_M(
     position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,
     **kwargs,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
-
-    # my_mask = kwargs.get("my_mask", None)
-    # init_LOOK_M(self)
     bsz, q_len, _ = hidden_states.size()
-    if q_len > 1:   # 只在prefill阶段初始化
+    if q_len > 1: 
         init_LOOK_M(self)
         if hasattr(self, "kv_seq_len"):
-            # q_len > 1 证明到了下一个sample阶段，kv_seq_len在第一个sample的时候会被初始化，从第二个开始只需要置空即可
             self.kv_seq_len = 0
 
     input_shape = hidden_states.shape[:-1]
@@ -1098,11 +1091,11 @@ def qwen_attention_forward_LOOK_M(
             kv_seq_len += past_key_value.get_usable_length(
                 kv_seq_len, self.layer_idx)
 
-    origin_key_states = deepcopy(key_states)  # 必须保留住原来的key，因为look-m方法需要用到
+    origin_key_states = deepcopy(key_states) 
     origin_value_states = deepcopy(value_states)
 
-    # 应该在这里拼接上kv cache
-    if q_len == 1:  # 证明当前是decode阶段，已经存在kv cache了，需要进行拼接
+
+    if q_len == 1:  
         key_states = torch.cat(
             [past_key_value.key_cache[self.layer_idx], key_states], dim=2)
         value_states = torch.cat(
@@ -1123,31 +1116,18 @@ def qwen_attention_forward_LOOK_M(
     attn_weights = nn.functional.dropout(
         attn_weights, p=self.attention_dropout, training=self.training)
 
-    # 在这里赶紧算attn_output
     attn_output = torch.matmul(attn_weights, value_states)
 
     if past_key_value is not None:
         # sin and cos are specific to RoPE models; cache_position needed for the static cache
         cache_kwargs = {"sin": sin, "cos": cos,
                         "cache_position": cache_position}
-        if origin_key_states.shape[-2] == kv_seq_len:   # prefill 阶段
-            # self.kv_seq_len = kv_seq_len
-            # save_dir_1 = f"/home/rcmu/read_papers/MLLM-Efficiency-main/records/{self.hh_ratio}_{self.recent_ratio}/max_indices"
-            # save_dir_2 = f"/home/rcmu/read_papers/MLLM-Efficiency-main/records/{self.hh_ratio}_{self.recent_ratio}/similarities"
-            # os.makedirs(save_dir_1, exist_ok=True)
-            # os.makedirs(save_dir_2, exist_ok=True)
-            key_states_compress, value_states_compress, max_indices, similarity = self.kv_cache.update_kv(
+        if origin_key_states.shape[-2] == kv_seq_len: 
+            key_states_compress, value_states_compress = self.kv_cache.update_kv(
                 key_states, query_states, value_states, attention_mask, self.num_key_value_groups, self.text_image_mask, self.head_dim, self.attention_dropout, self.training, origin_key_states, origin_value_states)
-            # with torch.autocast(device_type="cuda", dtype=torch.float32):
-            #     similarity = (origin_key_states / torch.norm(origin_key_states, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128)) @ ((origin_key_states / (torch.norm(origin_key_states, dim=-1).unsqueeze(-1).repeat(1, 1, 1, 128))).transpose(-1, -2))
-            # save_path_1 = f"/home/rcmu/read_papers/MLLM-Efficiency-main/records/{self.hh_ratio}_{self.recent_ratio}/max_indices/layer_{self.layer_idx}_indices.pt"
-            # save_path_2 = f"/home/rcmu/read_papers/MLLM-Efficiency-main/records/{self.hh_ratio}_{self.recent_ratio}/similarities/layer_{self.layer_idx}_similarity.pt"
-            # torch.save(max_indices, save_path_1)
-            # torch.save(similarity, save_path_2)
-
             past_key_value.update(
                 key_states_compress, value_states_compress, self.layer_idx, cache_kwargs)
-            self.kv_seq_len = key_states_compress.shape[-2]   # 这里需要把压缩之后的长度写进去
+            self.kv_seq_len = key_states_compress.shape[-2] 
         else:
             self.kv_seq_len += q_len
             key_states, value_states = past_key_value.update(
@@ -1434,8 +1414,6 @@ def qwen_model_forward_fastv(
 
         return_dict = return_dict if return_dict is not None else self.config.use_return_dict
 
-        # if (input_ids is None) ^ (inputs_embeds is not None):
-        #     raise ValueError("You must specify exactly one of input_ids or inputs_embeds")
         if input_ids is not None and inputs_embeds is not None:
             raise ValueError("You cannot specify both input_ids and inputs_embeds at the same time")
         elif input_ids is not None:
@@ -1520,9 +1498,7 @@ def qwen_model_forward_fastv(
 
                     text_image_mask = torch.tensor(self.text_image_mask[0])
                     image_start = int((text_image_mask == False).nonzero(as_tuple=True)[0][0])
-                    image_end = int((text_image_mask == False).nonzero(as_tuple=True)[0][-1])   
-                    # image_start = next((i for i, x in enumerate(self.text_image_mask[0]) if not x), None)    # get the first image token's index
-                    # image_end = next((len(self.text_image_mask[0]) - 1 - i for i, x in enumerate(reversed(self.text_image_mask[0])) if not x), None)  
+                    image_end = int((text_image_mask == False).nonzero(as_tuple=True)[0][-1])  
 
                     image_length = image_end - image_start + 1
                     assert image_start is not None and image_end is not None, "no image token found, fastv here now is must to have an image"   # at target layer and in prefill stage
@@ -1613,7 +1589,6 @@ def qwen_attention_forward_fastv(self,
     query_states, key_states = apply_rotary_pos_emb(query_states, key_states, cos, sin)
 
     if past_key_value is not None:
-        # if not(q_len > 1 and len(past_key_value.key_cache) == self.layer_idx + 1):  # FIXME  change here to solve the problem occur in fastv. q_len > 1 means the prefill stage, specifically now is the first time into this layer.But if we find there is already has cache of this layer in past_key_value, we should not update the cache because the forward has happened already and only want to get the attn weights but change the past_key_value inevitably.
         cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}  # Specific to RoPE models
         key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
 
@@ -2056,8 +2031,10 @@ def qwen_attention_forward_random(
             kv_seq_len += past_key_value.get_usable_length(
                 kv_seq_len, self.layer_idx)
 
-    origin_key_states = deepcopy(key_states)  
+
+    origin_key_states = deepcopy(key_states) 
     origin_value_states = deepcopy(value_states)
+    
 
     if q_len == 1:  
         key_states = torch.cat(
@@ -2087,11 +2064,13 @@ def qwen_attention_forward_random(
         # sin and cos are specific to RoPE models; cache_position needed for the static cache
         cache_kwargs = {"sin": sin, "cos": cos,
                         "cache_position": cache_position}
-        if origin_key_states.shape[-2] == kv_seq_len:   # prefill 阶段
+        if origin_key_states.shape[-2] == kv_seq_len:   
             key_states_compress, value_states_compress= self.kv_cache.update_kv(origin_key_states, origin_value_states)
             past_key_value.update(
                 key_states_compress, value_states_compress, self.layer_idx, cache_kwargs)
-            self.kv_seq_len = key_states_compress.shape[-2] 
+
+            self.kv_seq_len = key_states_compress.shape[-2]  
+
         else:
             self.kv_seq_len += q_len
             key_states, value_states = past_key_value.update(
@@ -2243,136 +2222,6 @@ def qwen_flash_attention_forward_random(self,
         attn_weights = None
     return attn_output, attn_weights, past_key_value
 
-
-# def qwen_flash_attention_forward_look_m(self,
-#         hidden_states: torch.Tensor,
-#         attention_mask: Optional[torch.Tensor] = None,
-#         position_ids: Optional[torch.LongTensor] = None,
-#         past_key_value: Optional[Cache] = None,
-#         output_attentions: bool = False,
-#         use_cache: bool = False,
-#         cache_position: Optional[torch.LongTensor] = None,
-#         position_embeddings: Optional[Tuple[torch.Tensor, torch.Tensor]] = None,  # will become mandatory in v4.46
-#     ):
-#     bsz, q_len, _ = hidden_states.size()
-#     if q_len > 1:
-#         init_LOOK_M(self)
-#         self.kv_seq_len = 0
-    
-#     query_states = self.q_proj(hidden_states)
-#     key_states = self.k_proj(hidden_states)
-#     value_states = self.v_proj(hidden_states)
-
-#     query_states = query_states.view(bsz, q_len, self.num_heads, self.head_dim).transpose(1, 2)
-#     key_states = key_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-#     value_states = value_states.view(bsz, q_len, self.num_key_value_heads, self.head_dim).transpose(1, 2)
-
-    
-#     kv_seq_len = key_states.shape[-2]
-#     if past_key_value is not None:
-#         if self.layer_idx is None:
-#             raise ValueError(
-#                 f"The cache structure has changed since version v4.36. If you are using {self.__class__.__name__} "
-#                 "for auto-regressive decoding with k/v caching, please make sure to initialize the attention class "
-#                 "with a layer index."
-#             )
-#         if hasattr(self, "kv_seq_len"): 
-#             if self.kv_seq_len != 0:
-#                 kv_seq_len += self.kv_seq_len
-#             else:
-#                 kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-#         else:
-#             kv_seq_len += past_key_value.get_usable_length(kv_seq_len, self.layer_idx)
-
-#     # Because the input can be padded, the absolute sequence length depends on the max position id.
-#     if position_embeddings is None:
-#         logger.warning_once(
-#             "The attention layers in this model are transitioning from computing the RoPE embeddings internally "
-#             "through `position_ids` (2D tensor with the indexes of the tokens), to using externally computed "
-#             "`position_embeddings` (Tuple of tensors, containing cos and sin). In v4.46 `position_ids` will be "
-#             "removed and `position_embeddings` will be mandatory."
-#         )
-#         cos, sin = self.rotary_emb(value_states, position_ids)
-#     else:
-#         cos, sin = position_embeddings
-
-#     query_states, key_states = apply_multimodal_rotary_pos_emb(
-#         query_states, key_states, cos, sin, self.rope_scaling["mrope_section"]
-#     )
-
-#     if past_key_value is not None:
-#         cache_kwargs = {"sin": sin, "cos": cos, "cache_position": cache_position}  # Specific to RoPE models
-        
-#         if key_states.shape[-2] == kv_seq_len: 
-#             self.kv_seq_len = kv_seq_len 
-#             key_states_compress, value_states_compress, _, _ = self.kv_cache.update_kv(None, query_states, None, attention_mask, self.num_key_value_groups, self.text_image_mask, self.head_dim, None, self.training, key_states, value_states, self.merge)
-#             past_key_value.update(key_states_compress, value_states_compress, self.layer_idx, cache_kwargs)
-#         else:
-#             self.kv_seq_len += q_len
-#             key_states, value_states = past_key_value.update(key_states, value_states, self.layer_idx, cache_kwargs)
-#         past_key_value._seen_tokens=self.kv_seq_len
-        
-#     # repeat k/v heads if n_kv_heads < n_heads
-#     key_states = repeat_kv(key_states, self.num_key_value_groups)
-#     value_states = repeat_kv(value_states, self.num_key_value_groups)
-#     dropout_rate = 0.0 if not self.training else self.attention_dropout
-
-#     # In PEFT, usually we cast the layer norms in float32 for training stability reasons
-#     # therefore the input hidden states gets silently casted in float32. Hence, we need
-#     # cast them back in float16 just to be sure everything works as expected.
-#     input_dtype = query_states.dtype
-#     if input_dtype == torch.float32:
-#         if torch.is_autocast_enabled():
-#             target_dtype = torch.get_autocast_gpu_dtype()
-#         # Handle the case where the model is quantized
-#         elif hasattr(self.config, "_pre_quantization_dtype"):
-#             target_dtype = self.config._pre_quantization_dtype
-#         else:
-#             target_dtype = self.q_proj.weight.dtype
-
-#         logger.warning_once(
-#             f"The input hidden states seems to be silently casted in float32, this might be related to"
-#             f" the fact you have upcasted embedding or layer norm layers in float32. We will cast back the input in"
-#             f" {target_dtype}."
-#         )
-
-#         query_states = query_states.to(target_dtype)
-#         key_states = key_states.to(target_dtype)
-#         value_states = value_states.to(target_dtype)
-
-#     # Reashape to the expected shape for Flash Attention
-#     query_states = query_states.transpose(1, 2)
-#     key_states = key_states.transpose(1, 2)
-#     value_states = value_states.transpose(1, 2)
-
-#     if (
-#         self.config.use_sliding_window
-#         and getattr(self.config, "sliding_window", None) is not None
-#         and self.layer_idx >= self.config.max_window_layers
-#     ):
-#         sliding_window = self.config.sliding_window
-#     else:
-#         sliding_window = None
-
-#     attn_output = _flash_attention_forward(
-#         query_states,
-#         key_states,
-#         value_states,
-#         attention_mask,
-#         q_len,
-#         dropout=dropout_rate,
-#         sliding_window=sliding_window,
-#         is_causal=self.is_causal,
-#         use_top_left_mask=self._flash_attn_uses_top_left_mask,
-#     )
-
-#     attn_output = attn_output.reshape(bsz, q_len, self.hidden_size).contiguous()
-#     attn_output = self.o_proj(attn_output)
-
-#     if not output_attentions:
-#         attn_weights = None
-#     return attn_output, attn_weights, past_key_value
-
 def qwen_flash_attention_forward_vlcache(self,
         hidden_states: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
@@ -2457,33 +2306,10 @@ def qwen_flash_attention_forward_vlcache(self,
     value_states = repeat_kv(value_states, self.num_key_value_groups)
     dropout_rate = 0.0 if not self.training else self.attention_dropout
 
-    # if q_len > 1:
-
-    #     attn_weights = torch.matmul( 
-    #         query_states.float(), key_states.transpose(-2, -1).float()) / math.sqrt(self.head_dim)
-    #     attention_mask_vlcache = torch.triu(torch.full((q_len,q_len),float('-inf')),diagonal=1).to(dtype=torch.float32,device=attn_weights.device) 
-    #     attn_weights += attention_mask_vlcache
-    #     del attention_mask_vlcache
-    #     attn_weights = nn.functional.softmax(
-    #         attn_weights, dim=-1, dtype=torch.float32)
-    #     attn_weights_postvison = attn_weights[:, :, -
-    #                                           self.kv_cluster.vlcache_post_vision_size:, :]
-
-    #     sparsity_layer_tuple = self.kv_cluster.get_sparsity_layer(
-    #         attn_weights_postvison, q_len, self.kv_cluster.vlcache_post_vision_size)
-    #     attn_weights_importance_tuple = self.kv_cluster.get_token_importance(
-    #         attn_weights_postvison)
-    #     self.kv_cluster.sparsity_layer_tuple += (sparsity_layer_tuple,)
-    #     self.kv_cluster.attn_weights_importance_tuple += (
-    #         attn_weights_importance_tuple,)
-    #     del attn_weights,attn_weights_postvison
-
     if q_len > 1:
 
         attn_weights = torch.matmul( 
             query_states[..., -self.kv_cluster.vlcache_post_vision_size:, :].float(), key_states.transpose(-2, -1).float()) / math.sqrt(self.head_dim)
-        # attention_mask_vlcache = torch.triu(torch.full((q_len,q_len),float('-inf')),diagonal=1).to(dtype=torch.float32,device=attn_weights.device) 
-        # attention_mask_vlcache = attention_mask_vlcache[-self.kv_cluster.vlcache_post_vision_size:, :]
         
         mask = torch.full((self.kv_cluster.vlcache_post_vision_size,q_len), torch.finfo(attn_weights.dtype).min, device=attn_weights.device)
         mask_cond = torch.arange(mask.size(-1), device=attn_weights.device)

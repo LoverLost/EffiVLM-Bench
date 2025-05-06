@@ -105,8 +105,8 @@ def replace_qwen(args, model, method):
         for name, module in model.named_modules():
             if isinstance(module, Qwen2Attention):
                 module.forward = types.MethodType(qwen_attention_forward_LOOK_M, module)
-                module.budget = getattr(args, 'budgets', None)
-                module.merge = getattr(args, 'merge', None)
+                module.budget = getattr(args, 'budgets', 1.0)
+                module.merge = getattr(args, 'merge', False)
                 module.hh_ratio = getattr(args, 'hh_ratio', None)
                 module.recent_ratio = getattr(args, 'recent_ratio', None)
 
@@ -124,12 +124,12 @@ def replace_qwen(args, model, method):
         for name, module in model.named_modules():
             if isinstance(module, Qwen2Attention):
                 module.forward = types.MethodType(qwen_attention_forward_fastv, module)
-                module.target_layer_idx = getattr(args, 'target_layer_idx', None)
+                module.target_layer_idx = getattr(args, 'target_layer_idx', 2)
             if isinstance(module, Qwen2Model):
                 module.forward = types.MethodType(qwen_model_forward_fastv, module)
-                module.target_layer_idx = getattr(args, 'target_layer_idx', None)
-                module.budgets = getattr(args, 'budgets', None)
-                module.origin = getattr(args, 'origin', None)
+                module.target_layer_idx = getattr(args, 'target_layer_idx', 2)
+                module.budgets = getattr(args, 'budgets', 1.0)
+                module.origin = getattr(args, 'origin', False)
 
     # elif method == "csp":
     #     print('using csp')
@@ -162,7 +162,7 @@ def replace_qwen(args, model, method):
         for name, module in model.named_modules():
             if isinstance(module, Qwen2Attention):
                 module.forward = types.MethodType(qwen_attention_forward_random, module)
-                module.budgets = getattr(args, 'budgets', None)
+                module.budgets = getattr(args, 'budgets', 1.0)
 
     elif method == 'visionzip':
         print('using visionzip')
@@ -171,7 +171,7 @@ def replace_qwen(args, model, method):
         from llava.model.language_model.llava_qwen import LlavaQwenForCausalLM
         # SigLipVisionTower.dominant = getattr(args, 'dominant_num')
         # SigLipVisionTower.contextual = getattr(args, 'contextual_num')
-        SigLipVisionTower.budgets = getattr(args, 'budgets', None)
+        SigLipVisionTower.budgets = getattr(args, 'budgets', 1.0)
         SigLipVisionTower.forward = siglip_vision_tower_forward
         SigLipEncoderLayer.forward = siglip_EncoderLayer_forward
         SigLipAttention.forward = siglip_attention_forward
@@ -198,7 +198,7 @@ def replace_qwen(args, model, method):
         from llava.model.language_model.sparse_modeling_qwen import Qwen2SparseModel
         LlavaQwenSparseForCausalLM.bias = 0
         LlavaQwenSparseForCausalLM.scale = 13.5
-        Qwen2SparseModel.ratio = getattr(args, 'r', None)
+        Qwen2SparseModel.ratio = getattr(args, 'r', 1.0)
 
 
 def replace_qwen2vl(args, model, method):
@@ -241,15 +241,15 @@ def replace_qwen2vl(args, model, method):
         for name, module in model.named_modules():
             if isinstance(module, Qwen2VLFlashAttention2):
                 module.forward = types.MethodType(qwen_flash_attention_forward_random, module)
-                module.budgets = args.budgets
+                module.budgets = getattr(args, 'budgets', 1.0)
 
     elif method == 'look-m':
         print('using look-m')
         for name, module in model.named_modules():
             if isinstance(module, Qwen2VLFlashAttention2):
                 module.forward = types.MethodType(qwen_flash_attention_forward_look_m, module)
-                module.budget = getattr(args, 'budgets', None)
-                module.merge = getattr(args, 'merge', False)
+                module.budget = getattr(args, 'budgets', 1.0)
+                module.merge = getattr(args, 'merge', True)
                 module.hh_ratio = getattr(args, 'hh_ratio', None)
                 module.recent_ratio = getattr(args, 'recent_ratio', None)
 
@@ -262,7 +262,7 @@ def replace_qwen2vl(args, model, method):
             if isinstance(module, Qwen2VLModel):
                 module.forward = types.MethodType(qwen_vl_model_forward_fastv, module)
                 module.target_layer_idx = getattr(args, 'target_layer_idx', 2)
-                module.budgets = getattr(args, 'budgets', None)
+                module.budgets = getattr(args, 'budgets', 1.0)
                 module.origin = getattr(args, 'origin', False)
 
     elif method == 'visionzip':
@@ -271,7 +271,7 @@ def replace_qwen2vl(args, model, method):
         qwen2vl.modeling_qwen2_vl.Qwen2VisionTransformerPretrainedModel.forward = qwen2vl_vision_tower_forward_visionzip
         qwen2vl.modeling_qwen2_vl.Qwen2VLVisionBlock.forward = qwen2vl_vision_block_forward_visionzip
         qwen2vl.modeling_qwen2_vl.Qwen2VisionTransformerPretrainedModel.budgets = getattr(
-            args, 'budgets', 0.01)
+            args, 'budgets', 1.0)
         qwen2vl.modeling_qwen2_vl.Qwen2VLForConditionalGeneration.forward = qwen2vl_generation_forward_visionzip
 
     elif method == "vl-cache":
@@ -363,9 +363,9 @@ def replace_qwen_for_internvl(args, model, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.recent_ratio = getattr(
             args, 'recent_ratio', None)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budget = getattr(
-            args, 'budgets', None)
+            args, 'budgets', 1.0)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.merge = getattr(
-            args, 'merge', None)
+            args, 'merge', True)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_LOOK_M
 
     elif method == 'snapkv':
@@ -380,13 +380,13 @@ def replace_qwen_for_internvl(args, model, method):
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.forward = qwen_model_forward_fastv
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_fastv
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.target_layer_idx = getattr(
-            args, 'target_layer_idx', None)
+            args, 'target_layer_idx', 2)
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.target_layer_idx = getattr(
-            args, 'target_layer_idx', None)
+            args, 'target_layer_idx', 2)
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.budgets = getattr(
-            args, 'budgets', None)   # visual part
+            args, 'budgets', 1.0)   # visual part
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.origin = getattr(
-            args, 'origin', None)
+            args, 'origin', False)
 
     elif method == 'pyramidkv':
         print('using pyramidkv')
@@ -397,23 +397,23 @@ def replace_qwen_for_internvl(args, model, method):
 
     elif method == 'visionzip':
         print('using visionzip')
-        for idx, layer in enumerate(model.vision_model.encoder.layers):    # 绑定layer_idx属性
+        for idx, layer in enumerate(model.vision_model.encoder.layers):  
             layer.attn.layer_idx = idx
             layer.attn.forward = types.MethodType(internvl_attention_forward_4B_visionzip, layer.attn)
             layer.attn._naive_attn = types.MethodType(internvl_naive_attn_4B_visionzip, layer.attn)
         model.generate = types.MethodType(internvl_generate_4B_visionzip, model)
         model.extract_feature = types.MethodType(internvl_extract_feature_4B_visionzip, model)
-        model.budgets = getattr(args, 'budgets', None)
+        model.budgets = getattr(args, 'budgets', 1.0)
 
     elif method == 'random':
         print('using random')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = getattr(
-            args, 'budgets', None)
+            args, 'budgets', 1.0)
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_random
 
     elif method == 'prumerge+':
         print('using prumerge+')
-        for idx, layer in enumerate(model.vision_model.encoder.layers):    # 绑定layer_idx属性
+        for idx, layer in enumerate(model.vision_model.encoder.layers): 
             layer.attn.layer_idx = idx
             layer.attn.forward = types.MethodType(internvl_attention_forward_4B_prumerge_plus, layer.attn)
             layer.attn._naive_attn = types.MethodType(internvl_naive_attn_4B_prumerge_plus, layer.attn)
@@ -467,8 +467,8 @@ def replace_qwen_for_internvl_38B(args, model, method):
                 module.forward = types.MethodType(qwen_attention_forward_LOOK_M, module)
                 module.hh_ratio = getattr(args, 'hh_ratio', None)
                 module.recent_ratio = getattr(args, 'recent_ratio', None)
-                module.budget = getattr(args, 'budgets', None)
-                module.merge = getattr(args, 'merge', None)
+                module.budget = getattr(args, 'budgets', 1.0)
+                module.merge = getattr(args, 'merge', True)
 
     elif method == 'snapkv':
         print('using snapkv')
@@ -485,12 +485,12 @@ def replace_qwen_for_internvl_38B(args, model, method):
         for name, module in model.named_modules():
             if isinstance(module, Qwen2Attention):
                 module.forward = types.MethodType(qwen_attention_forward_fastv, module)
-                module.target_layer_idx = getattr(args, 'target_layer_idx', None)
+                module.target_layer_idx = getattr(args, 'target_layer_idx', 2)
             if isinstance(module, Qwen2Model):
                 module.forward = types.MethodType(qwen_model_forward_fastv, module)
-                module.target_layer_idx = getattr(args, 'target_layer_idx', None)
-                module.budgets = getattr(args, 'budgets', None)
-                module.origin = getattr(args, 'origin', None)
+                module.target_layer_idx = getattr(args, 'target_layer_idx', 2)
+                module.budgets = getattr(args, 'budgets', 1.0)
+                module.origin = getattr(args, 'origin', False)
 
 
     elif method == 'pyramidkv':
@@ -507,23 +507,23 @@ def replace_qwen_for_internvl_38B(args, model, method):
         print('using random')
         for name, module in model.named_modules():
             if isinstance(module, Qwen2Attention):
-                module.budgets = getattr(args, 'budgets', None)
+                module.budgets = getattr(args, 'budgets', 1.0)
                 module.forward = types.MethodType(qwen_attention_forward_random, module)
     
     elif method == 'visionzip':
         print('using visionzip')
-        for idx, layer in enumerate(model.vision_model.encoder.layers):    # 绑定layer_idx属性
+        for idx, layer in enumerate(model.vision_model.encoder.layers): 
             layer.attn.layer_idx = idx
             layer.attn.forward = types.MethodType(internvl_attention_forward_38B_visionzip, layer.attn)
             layer.attn._naive_attn = types.MethodType(internvl_naive_attn_38B_visionzip, layer.attn)
         model.generate = types.MethodType(internvl_generate_38B_visionzip, model)
         model.extract_feature = types.MethodType(internvl_extract_feature_38B_visionzip, model)
-        model.budgets = getattr(args, 'budgets', None)
+        model.budgets = getattr(args, 'budgets', 1.0)
 
 
     elif method == 'prumerge+':
         print('using prumerge+')
-        for idx, layer in enumerate(model.vision_model.encoder.layers):    # 绑定layer_idx属性
+        for idx, layer in enumerate(model.vision_model.encoder.layers):
             layer.attn.layer_idx = idx
             layer.attn.forward = types.MethodType(internvl_attention_forward_38B_prumerge_plus, layer.attn)
             layer.attn._naive_attn = types.MethodType(internvl_naive_attn_38B_prumerge_plus, layer.attn)

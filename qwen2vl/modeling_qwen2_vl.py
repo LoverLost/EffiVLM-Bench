@@ -343,7 +343,7 @@ class VisionAttention(nn.Module):
             [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
         )
         for i in range(1, len(cu_seqlens)):
-            attention_mask[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0  # 控制前一张图片对后一张图片的注意力为0
+            attention_mask[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0  
 
         q = q.transpose(0, 1)
         k = k.transpose(0, 1)
@@ -425,7 +425,7 @@ class Qwen2VLVisionBlock(nn.Module):
         self.layer_idx = layer_idx
         mlp_hidden_dim = int(config.embed_dim * config.mlp_ratio)
 
-        self.attn = QWEN2_VL_VISION_ATTENTION_CLASSES[attn_implementation](   # 这里默认使用的是flash_attention_2
+        self.attn = QWEN2_VL_VISION_ATTENTION_CLASSES[attn_implementation](  
             config.embed_dim, num_heads=config.num_heads, layer_idx=layer_idx
         )
         self.mlp = VisionMlp(dim=config.embed_dim, hidden_dim=mlp_hidden_dim, hidden_act=config.hidden_act)
@@ -1027,7 +1027,7 @@ class Qwen2VisionTransformerPretrainedModel(Qwen2VLPreTrainedModel):
         hidden_states = self.patch_embed(hidden_states)
         rotary_pos_emb = self.rot_pos_emb(grid_thw)
 
-        cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(  #[0，0+第一张图片的grid总数， 0 + 第一张图片的grid总数 + 第二张图片的grid总数， 0 + 第一张图片的grid总数 + 第二张图片的grid总数 + 第三张图片的grid总数]
+        cu_seqlens = torch.repeat_interleave(grid_thw[:, 1] * grid_thw[:, 2], grid_thw[:, 0]).cumsum(  
             dim=0,
             # Select dtype based on the following factors:
             #  - FA2 requires that cu_seqlens_q must have dtype int32
@@ -1045,7 +1045,7 @@ class Qwen2VisionTransformerPretrainedModel(Qwen2VLPreTrainedModel):
             else:
                 hidden_states = blk(hidden_states, cu_seqlens=cu_seqlens, rotary_pos_emb=rotary_pos_emb)
 
-        return self.merger(hidden_states)  # [1000, 1120]    [16, 1000, 1000]    [250, 3584]
+        return self.merger(hidden_states)
 
 
 @add_start_docstrings(
@@ -1680,7 +1680,7 @@ class Qwen2VLForConditionalGeneration(Qwen2VLPreTrainedModel, GenerationMixin):
                     .to(inputs_embeds.device)
                 )
                 image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)   # 151655
-                inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)               # FIXME  
+                inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)              
 
                 text_image_mask = (input_ids != 151655)   # HACK  change here to get image_mask(image position is false, else is true)
                 self.base_model.text_image_mask = text_image_mask

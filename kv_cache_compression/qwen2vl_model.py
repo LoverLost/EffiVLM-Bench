@@ -914,7 +914,7 @@ def qwen_flash_attention_forward_look_m(self,
         
         if key_states.shape[-2] == kv_seq_len: 
             self.kv_seq_len = kv_seq_len 
-            key_states_compress, value_states_compress, _, _ = self.kv_cache.update_kv(None, query_states, None, attention_mask, self.num_key_value_groups, self.text_image_mask, self.head_dim, None, self.training, key_states, value_states, self.merge)
+            key_states_compress, value_states_compress = self.kv_cache.update_kv(None, query_states, None, attention_mask, self.num_key_value_groups, self.text_image_mask, self.head_dim, None, self.training, key_states, value_states, self.merge)
             past_key_value.update(key_states_compress, value_states_compress, self.layer_idx, cache_kwargs)
         else:
             self.kv_seq_len += q_len
@@ -996,7 +996,7 @@ def qwen_vl_flash_attention_forward_fastv(
     ):
         bsz, q_len, _ = hidden_states.size()
 
-        if self.layer_idx == self.target_layer_idx - 1:   # HACK add here
+        if self.layer_idx == self.target_layer_idx - 1: 
             self.last_attention = None
 
         query_states = self.q_proj(hidden_states)
@@ -1139,7 +1139,7 @@ def qwen_vl_model_forward_fastv(
 
         if inputs_embeds is None:
             inputs_embeds = self.embed_tokens(input_ids)
-            batch_size, seq_length = inputs_embeds.shape[:2]      # HACK add here, get the seq_length and batch_size
+            batch_size, seq_length = inputs_embeds.shape[:2] 
         elif inputs_embeds is not None:
             batch_size, seq_length = inputs_embeds.shape[:2]
 
@@ -1195,13 +1195,9 @@ def qwen_vl_model_forward_fastv(
                     last_attention = self.layers[self.target_layer_idx - 1].self_attn.last_attention
                     assert last_attention is not None, 'last attension is None, but it should be not None'
 
-                    # text_image_mask = torch.tensor(self.text_image_mask[0])
                     text_image_mask = self.text_image_mask[0]
                     image_start = int((text_image_mask == False).nonzero(as_tuple=True)[0][0])
                     image_end = int((text_image_mask == False).nonzero(as_tuple=True)[0][-1])   
-                    # image_start = next((i for i, x in enumerate(self.text_image_mask[0]) if not x), None)    # get the first image token's index
-                    # image_end = next((len(self.text_image_mask[0]) - 1 - i for i, x in enumerate(reversed(self.text_image_mask[0])) if not x), None)  
-
                     image_length = image_end - image_start + 1
                     assert image_start is not None and image_end is not None, "no image token found, fastv here now is must to have an image"   # at target layer and in prefill stage
                     
@@ -1216,7 +1212,7 @@ def qwen_vl_model_forward_fastv(
                     hidden_states = hidden_states[:,keep_indexs,:]
                     if causal_mask is not None:
                         causal_mask = causal_mask[:,:,:hidden_states.shape[1],:hidden_states.shape[1]]
-                    position_ids = position_ids[:, :, keep_indexs]             # TODO  三个维度都要进行压缩
+                    position_ids = position_ids[:, :, keep_indexs]      
                     position_embeddings = self.rotary_emb(hidden_states, position_ids)
 
 
@@ -1278,20 +1274,6 @@ def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, gr
         else:
             hidden_states = blk(hidden_states, cu_seqlens=cu_seqlens, rotary_pos_emb=rotary_pos_emb)
 
-    ## handle visionzip here ##
-    # current_result = self.merger(hidden_states) 
-
-    # attn_weights = self.blocks[-2].attn.attn_weights
-    # num_heads, q_len, k_len = attn_weights.shape
-    # assert q_len == k_len, "q_len and k_len should be the same, the error is in Qwen2VisionTransformerPretrainedModel's forward function"
-    # q_len_pooled = q_len // 4
-    # k_len_pooled = k_len // 4
-    # attn_weights = attn_weights.view(num_heads, q_len_pooled, 4, k_len_pooled, 4)  
-    # attn_weights = attn_weights.mean(dim=(2, 4))
-    # attention_sum = attn_weights.mean(dim=0).mean(dim=0)  
-
-
-    # 算attn的第二种方式
     attn_weights = self.blocks[-2].attn.attn_weights
     num_heads, q_len, k_len = attn_weights.shape
     assert q_len == k_len, "q_len and k_len should be the same, the error is in Qwen2VisionTransformerPretrainedModel's forward function"
@@ -1299,47 +1281,54 @@ def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, gr
     attention_sum = attn_weights.view(-1, 4).mean(dim=1)
     
 
-    # hidden_states = self.blocks[-2].hidden_states
-    # self.blocks[-2].hidden_states = None
-    hidden_states = self.merger(hidden_states)   
+
+    hidden_states = self.merger(hidden_states) 
     metric = self.blocks[-2].attn.metric
     self.blocks[-2].attn.metric = None
-    metric = metric.view(num_heads, metric.shape[1] // 4, 4, -1)   
+    metric = metric.view(num_heads, metric.shape[1] // 4, 4, -1)  
+
     metric = metric.mean(dim=2).mean(dim=0)   
     total_token_num = metric.shape[0]
     dominant_num = max(1, int(total_token_num * self.budgets * 5.4 / 6.4))
     contextual_num = max(1, int(total_token_num * self.budgets * 1.0 / 6.4))
     all_indices = attention_sum.topk(dominant_num, dim=0).indices   # get topk indices
     all_indices = all_indices.sort().values
-    mask = torch.ones_like(hidden_states[:, 0], dtype=torch.bool, device=metric.device).scatter_(0, all_indices, False)  # which to delete  true is delete
+
+    mask = torch.ones_like(hidden_states[:, 0], dtype=torch.bool, device=metric.device).scatter_(0, all_indices, False)  # true is delete
+
     filtered_indices = torch.where(mask)[0]  
     dominant_tokens = hidden_states.masked_select(~mask.unsqueeze(-1)).view(dominant_num, hidden_states.shape[1])
 
-    metric_filtered = metric[mask].view(hidden_states.shape[0] - dominant_num, metric.shape[1])  # [589, 80]
-    hidden_states_filtered = hidden_states.masked_select(mask.unsqueeze(-1)).view(hidden_states.shape[0] - dominant_num, hidden_states.shape[1])  # [589, 3584]
+    metric_filtered = metric[mask].view(hidden_states.shape[0] - dominant_num, metric.shape[1]) 
+    hidden_states_filtered = hidden_states.masked_select(mask.unsqueeze(-1)).view(hidden_states.shape[0] - dominant_num, hidden_states.shape[1])  
     metric_normalized = metric_filtered / metric_filtered.norm(dim=-1, keepdim=True) 
 
     ## Start merge
     step = max(1, metric_normalized.shape[0] // contextual_num)
-    target_indices = torch.arange(0, metric_normalized.shape[0], step, device=metric_normalized.device)[:contextual_num]  
-    contextual_indices = filtered_indices[target_indices]  
-    target_tokens = metric_normalized[target_indices, :]  # [55, 80]  
 
-    tokens_to_merge = metric_normalized[~torch.isin(torch.arange(metric_normalized.shape[0], device=metric_normalized.device), target_indices), :]   # [534,80]
-    similarity = torch.matmul(tokens_to_merge.float(), target_tokens.transpose(0, 1).float())   # FIXME  change here
+    target_indices = torch.arange(0, metric_normalized.shape[0], step, device=metric_normalized.device)[:contextual_num] 
+    contextual_indices = filtered_indices[target_indices]  
+    target_tokens = metric_normalized[target_indices, :]  
+
+
+    tokens_to_merge = metric_normalized[~torch.isin(torch.arange(metric_normalized.shape[0], device=metric_normalized.device), target_indices), :]  
+    similarity = torch.matmul(tokens_to_merge.float(), target_tokens.transpose(0, 1).float())  
     assign_one_hot = torch.zeros(tokens_to_merge.shape[0], contextual_num, dtype=hidden_states_filtered.dtype, device=metric_normalized.device)
     assign_one_hot.scatter_(1, similarity.argmax(dim=1).unsqueeze(-1), 1)
-    counts = assign_one_hot.sum(dim=0).clamp(min=1).unsqueeze(-1)       
+
+    counts = assign_one_hot.sum(dim=0).clamp(min=1).unsqueeze(-1)      
+
     hidden_to_merge = hidden_states_filtered[~torch.isin(torch.arange(hidden_states_filtered.shape[0], device=hidden_states_filtered.device), target_indices), :]
-    aggregated_hidden = (torch.matmul(assign_one_hot.transpose(0, 1).float(), hidden_to_merge.float()) / counts).to(torch.bfloat16) # FIXME  change here
+    aggregated_hidden = (torch.matmul(assign_one_hot.transpose(0, 1).float(), hidden_to_merge.float()) / counts).to(torch.bfloat16) 
     target_hidden = hidden_states_filtered[target_indices, :] 
     
     contextual_tokens = target_hidden + aggregated_hidden
 
-    # Merge with target hidden states and concatenate
-    # hidden_states_save = torch.cat([dominant_tokens, contextual_tokens], dim=0).to(hidden_states.dtype)
+
+   
     all_keep_indices = torch.cat([all_indices, contextual_indices])
     all_keep_indices = all_keep_indices.sort().values 
+  
 
     hidden_states_save = torch.zeros(
         (len(all_keep_indices), hidden_states.shape[1]), 
@@ -1349,24 +1338,13 @@ def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, gr
 
     dominant_mask = torch.zeros(len(all_keep_indices), dtype=torch.bool, device=hidden_states.device)
     dominant_mask = torch.isin(all_keep_indices, all_indices)
-
-    # 填充dominant tokens
     dominant_positions = torch.where(dominant_mask)[0]
     hidden_states_save[dominant_positions] = dominant_tokens
-
-    # 填充contextual tokens 
     contextual_positions = torch.where(~dominant_mask)[0]
     hidden_states_save[contextual_positions] = contextual_tokens
 
     return hidden_states_save, all_keep_indices
 
-    # total_token_num = attention_sum.shape[0]
-    # dominant_num = max(1, int(total_token_num * self.budgets))
-    # all_indices = attention_sum.topk(dominant_num, dim=0).indices
-    # all_indices = all_indices.sort().values
-    # mask = torch.ones_like(hidden_states[:, 0], dtype=torch.bool, device=attention_sum.device).scatter_(0, all_indices, False)
-    # dominant_tokens = hidden_states.masked_select(~mask.unsqueeze(-1)).view(dominant_num, hidden_states.shape[1])
-    # return dominant_tokens, all_indices
 
 
 def qwen2vl_vision_flash_attention2_forward_visionzip(self, hidden_states: torch.Tensor, cu_seqlens: torch.Tensor, rotary_pos_emb: torch.Tensor = None
@@ -1380,18 +1358,11 @@ def qwen2vl_vision_flash_attention2_forward_visionzip(self, hidden_states: torch
         q = apply_rotary_pos_emb_vision(q.unsqueeze(0), rotary_pos_emb).squeeze(0)   # seq_len, num_heads, head_dim
         k = apply_rotary_pos_emb_vision(k.unsqueeze(0), rotary_pos_emb).squeeze(0)
 
-        if self.layer_idx == 30:   # HACK mimic eager attention to get the attention weights
+        if self.layer_idx == 30:  
             k_here = k.transpose(0, 1)   # [num_heads, seq_len, head_dim]
             self.metric = k_here
             q_here = q.transpose(0, 1)
-            # attention_mask_here = torch.full(  
-            # [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
-            # )
-            # for i in range(1, len(cu_seqlens)):
-            #     attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0  
-            # attention_mask_here = torch.full(  
-            # [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
-            # )
+
             attention_mask_here = torch.full(  
                 [1, seq_length, seq_length], True, dtype=torch.bool, device=q.device
             )
@@ -1458,12 +1429,14 @@ def qwen2vl_generation_forward_visionzip(
         inputs_embeds = self.model.embed_tokens(input_ids)
         if pixel_values is not None:  # prefill stage
             pixel_values = pixel_values.type(self.visual.get_dtype())
-            image_embeds, all_indices = self.visual(pixel_values, grid_thw=image_grid_thw)   # change here
-            n_image_tokens = image_embeds.shape[0]   # change here
+
+            image_embeds, all_indices = self.visual(pixel_values, grid_thw=image_grid_thw)  
+            n_image_tokens = image_embeds.shape[0] 
+
             total_len = input_ids.shape[-1]   
             assert input_ids.shape[0] == 1, 'visionzip only support single batch, assert is in qwen2vl_generation_forward_visionzip function'
             position_image_begin_token = (input_ids[0] == 151652).nonzero(as_tuple=True)[0]
-            before_idx = position_image_begin_token[0].item() + 1   # before image length
+            before_idx = position_image_begin_token[0].item() + 1   
             before_img = input_ids[:, :before_idx]
             position_image_end_token = (input_ids[0] == 151653).nonzero(as_tuple=True)[0]
             post_idx = position_image_end_token[-1].item() 
@@ -1474,10 +1447,10 @@ def qwen2vl_generation_forward_visionzip(
                 dtype=input_ids.dtype, 
                 device=input_ids.device
             )
-            origin_input_ids = deepcopy(input_ids)   # HACK deepcopy to calculate position_ids with origin_input_ids 
-            input_ids = torch.cat((before_img, img_tensor, post_img), dim=1)   # 重新拼接
-            all_indices = all_indices + before_idx  # 重新计算图片偏移
-            all_indices = torch.cat((torch.arange(0, before_idx, device=all_indices.device), all_indices, torch.arange(post_idx, total_len, device=all_indices.device)))   # 留下的token的下标
+            origin_input_ids = deepcopy(input_ids)   
+            input_ids = torch.cat((before_img, img_tensor, post_img), dim=1)  
+            all_indices = all_indices + before_idx  
+            all_indices = torch.cat((torch.arange(0, before_idx, device=all_indices.device), all_indices, torch.arange(post_idx, total_len, device=all_indices.device)))  
             inputs_embeds = inputs_embeds[:, all_indices, :]
 
             
@@ -1490,7 +1463,7 @@ def qwen2vl_generation_forward_visionzip(
             image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)   # 151655
             inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
 
-            text_image_mask = (input_ids != 151655)   # HACK  change here to get image_mask(image position is false, else is true)
+            text_image_mask = (input_ids != 151655)   
             self.base_model.text_image_mask = text_image_mask
             for layer in self.base_model.layers:
                     layer.self_attn.text_image_mask = text_image_mask
@@ -1618,27 +1591,20 @@ def qwen2vl_vision_tower_forward_prumerge_plus(self, hidden_states: torch.Tensor
     attn_weights = attn_weights.mean(dim=(2, 4))
 
 
-    # image_features [1,616/4,1280]
-    # image_features = self.blocks[-2].hidden_states
     image_features = self.merger(hidden_states)
     image_features = image_features.unsqueeze(0)
     B, N, C = image_features.shape
 
-    # desired_layer_k [616,1280]
+
     desired_layer_k = self.blocks[-2].attn.metric
-    # [616,1280] -> [616/4,4,1280]
     desired_layer_k = desired_layer_k.view(desired_layer_k.shape[0] // 4, 4, -1)
-    # [616/4,4,1280] -> [1,616/4,1280]
     desired_layer_k = desired_layer_k.mean(dim=1).unsqueeze(0)
     k_C = desired_layer_k.shape[-1]
-    
-    # cls_attn [1,616]
     cls_attn = torch.mean(attn_weights, dim=[0,1]).unsqueeze(0)
     
     assert cls_attn.ndim == 2
 
     reduction_ratio = outlier_dectection_prumerge_plus(cls_attn)#*3.5
-    
     # Maintaining the preset budget
     budgets_token = max(int(self.budgets * N), 1)
     iqr_token = max(int(N*reduction_ratio), 1)
@@ -1680,7 +1646,6 @@ def qwen2vl_vision_tower_forward_prumerge_plus(self, hidden_states: torch.Tensor
     index_features = idx.unsqueeze(-1).expand(-1, -1, C)  # [B, left_tokens, C]
     index_k = idx.unsqueeze(-1).expand(-1, -1, k_C)  # [B, left_tokens, C]
 
-    # Key_wo_cls = desired_layer_k[:, 1:]  # [B, N-1, C]
 
     x_others = torch.gather(image_features, dim=1, index=index_features)  # [B, left_tokens, C]
     Key_others = torch.gather(desired_layer_k, dim=1, index=index_k)  # [B, left_tokens, C]
@@ -1692,10 +1657,6 @@ def qwen2vl_vision_tower_forward_prumerge_plus(self, hidden_states: torch.Tensor
 
     Key_others_norm = nn.functional.normalize(Key_others, p=2, dim=-1)
     non_topk_Key_norm = nn.functional.normalize(non_topk_Key, p=2, dim=-1)
-
-    # cos_sim = torch.bmm(Key_others_norm, non_topk_Key_norm.transpose(1, 2)) # [B, left_tokens, N-1-left_tokens]
-
-    # _, cluster_indices = torch.topk(cos_sim, k=4, dim=2, largest=True)
 
     B, left_tokens, C = x_others.size()
     updated_x_others = torch.zeros_like(x_others)
@@ -1748,15 +1709,14 @@ def qwen2vl_vision_flash_attention2_forward_prumerge_plus(self, hidden_states: t
         q = apply_rotary_pos_emb_vision(q.unsqueeze(0), rotary_pos_emb).squeeze(0)   # seq_len, num_heads, head_dim
         k = apply_rotary_pos_emb_vision(k.unsqueeze(0), rotary_pos_emb).squeeze(0)
 
-        if self.layer_idx == 30:   # HACK mimic eager attention to get the attention weights
+        if self.layer_idx == 30:  
             k_here = k.transpose(0, 1)   # [num_heads, seq_len, head_dim]
             self.metric = k.view(seq_length, -1)
             q_here = q.transpose(0, 1)
             attn_weights_here = torch.matmul(q_here, k_here.transpose(1, 2)) / math.sqrt(q.shape[-1])   # [num_heads, seq_len, seq_len]
-            # attention_mask_here = torch.full( 
-            # [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
-            # )
-            attention_mask_here = torch.full(  
+
+            attention_mask_here = torch.full( 
+
             [1, seq_length, seq_length], True, dtype=torch.bool, device=q.device
             )
             for i in range(1, len(cu_seqlens)):
@@ -1776,7 +1736,7 @@ def qwen2vl_vision_flash_attention2_forward_prumerge_plus(self, hidden_states: t
         return attn_output
 
 
-# HACK rewrite the function only to store the hidden_states
+
 def qwen2vl_vision_block_forward_prumerge_plus(self, hidden_states, cu_seqlens, rotary_pos_emb) -> torch.Tensor:
         if self.layer_idx == 30:
             self.hidden_states = None
@@ -1822,9 +1782,11 @@ def qwen2vl_generation_forward_prumerge_plus(
         inputs_embeds = self.model.embed_tokens(input_ids)
         if pixel_values is not None:  # prefill stage
             pixel_values = pixel_values.type(self.visual.get_dtype())
-            image_embeds, all_indices = self.visual(pixel_values, grid_thw=image_grid_thw)   # change here
-            n_image_tokens = image_embeds.shape[0]   # change here
-            total_len = input_ids.shape[-1]  
+
+            image_embeds, all_indices = self.visual(pixel_values, grid_thw=image_grid_thw)  
+            n_image_tokens = image_embeds.shape[0]   
+            total_len = input_ids.shape[-1] 
+
             assert input_ids.shape[0] == 1, 'prumerge only support single batch, assert is in qwen2vl_generation_forward_prumerge_plus function'
             position_image_begin_token = (input_ids[0] == 151652).nonzero(as_tuple=True)[0]
             before_idx = position_image_begin_token[0].item() + 1   # before image length
@@ -1838,10 +1800,12 @@ def qwen2vl_generation_forward_prumerge_plus(
                 dtype=input_ids.dtype, 
                 device=input_ids.device
             )
-            origin_input_ids = deepcopy(input_ids)   # HACK deepcopy to calculate position_ids with origin_input_ids 
-            input_ids = torch.cat((before_img, img_tensor, post_img), dim=1)
-            all_indices = all_indices + before_idx
-            all_indices = torch.cat((torch.arange(0, before_idx, device=all_indices.device), all_indices, torch.arange(post_idx, total_len, device=all_indices.device)))   # 留下的token的下标
+
+            origin_input_ids = deepcopy(input_ids)  
+            input_ids = torch.cat((before_img, img_tensor, post_img), dim=1)   
+            all_indices = all_indices + before_idx  
+            all_indices = torch.cat((torch.arange(0, before_idx, device=all_indices.device), all_indices, torch.arange(post_idx, total_len, device=all_indices.device)))
+
             inputs_embeds = inputs_embeds[:, all_indices, :]
 
             
@@ -1854,7 +1818,7 @@ def qwen2vl_generation_forward_prumerge_plus(
             image_embeds = image_embeds.to(inputs_embeds.device, inputs_embeds.dtype)   # 151655
             inputs_embeds = inputs_embeds.masked_scatter(image_mask, image_embeds)
 
-            text_image_mask = (input_ids != 151655)   # HACK  change here to get image_mask(image position is false, else is true)
+            text_image_mask = (input_ids != 151655)   
             self.base_model.text_image_mask = text_image_mask
             for layer in self.base_model.layers:
                     layer.self_attn.text_image_mask = text_image_mask

@@ -206,7 +206,7 @@ class LlavaMetaForCausalLM(ABC):
     
     def encode_multimodals(self, videos_or_images, video_idx_in_batch, split_sizes=None):
         videos_or_images_features = self.get_model().get_vision_tower()(videos_or_images)
-        per_videos_or_images_features = torch.split(videos_or_images_features, split_sizes, dim=0)  # tuple, (dim_1, 576, 4096)
+        per_videos_or_images_features = torch.split(videos_or_images_features, split_sizes, dim=0) 
         all_videos_or_images_features = []
         all_faster_video_features = []
         cur_mm_spatial_pool_stride = self.config.mm_spatial_pool_stride
@@ -239,13 +239,9 @@ class LlavaMetaForCausalLM(ABC):
         image_feature = torch.cat((image_feature, self.model.image_newline[:, None, None].expand(*image_feature.shape[:-1], 1).to(image_feature.device)), dim=-1)
         if getattr(self.config, "add_faster_video", False):
             # import pdb; pdb.set_trace()
-            # (3584, 832, 14) -> (3584, 64, 13, 14)
             image_feature = image_feature.view(feature_dim, num_frames,resize_h, -1)
-            #  (3584, 64, 13, 14) -> (64, 13, 14, 3584)
             image_feature = image_feature.permute(1, 2, 3, 0).contiguous()
-            # (64, 13, 14, 3584) -> (64, 13*14, 3584)
             image_feature = image_feature.flatten(1, 2)
-            # import pdb; pdb.set_trace()
             return image_feature
         # import pdb; pdb.set_trace()
         image_feature = image_feature.flatten(1, 2).transpose(0, 1)
@@ -286,10 +282,6 @@ class LlavaMetaForCausalLM(ABC):
             concat_images = torch.cat([image for image in images_list], dim=0)
             split_sizes = [image.shape[0] for image in images_list]
             encoded_image_features = self.encode_images(concat_images)
-            # image_features,all_faster_video_features = self.encode_multimodals(concat_images, video_idx_in_batch, split_sizes)
-
-            # This is a list, each element is [num_images, patch * patch, dim]
-            # rank_print(f"Concat images : {concat_images.shape}")
             encoded_image_features = torch.split(encoded_image_features, split_sizes)
             image_features = []
             for idx, image_feat in enumerate(encoded_image_features):
@@ -297,9 +289,6 @@ class LlavaMetaForCausalLM(ABC):
                     image_features.append(self.get_2dPool(image_feat))
                 else:
                     image_features.append(image_feat)
-            # image_features = self.encode_multimodals(concat_images, video_idx_in_batch, split_sizes)
-            # rank_print(f"Encoded image feats : {[x.shape for x in image_features]}")
-            # image_features = torch.split(image_features, split_sizes, dim=0)
             mm_patch_merge_type = getattr(self.config, "mm_patch_merge_type", "flat")
             image_aspect_ratio = getattr(self.config, "image_aspect_ratio", "square")
             mm_newline_position = getattr(self.config, "mm_newline_position", "one_token")
@@ -333,8 +322,6 @@ class LlavaMetaForCausalLM(ABC):
                                         concat_slow_fater_token.append(torch.cat((faster_video_feature[_], self.model.faster_token[None].to(image_feature.device)), dim=0))
                                 # import pdb; pdb.set_trace()
                                 image_feature = torch.cat(concat_slow_fater_token)
-
-                                # print("!!!!!!!!!!!!")
                         
                             new_image_features.append(image_feature)
                         elif mm_newline_position == "frame":
@@ -454,33 +441,30 @@ class LlavaMetaForCausalLM(ABC):
         new_input_embeds = []
         new_labels = []
         cur_image_idx = 0
-        kv_cache_mask = []   # FIXME 标记了哪里是图片，哪里是文本。文本就是true，图片就是false
+        kv_cache_mask = []   # FIXME text token is True，img token is False
         """
-        接下来这段代码是为了得到每个batch的图片和文本掩码，
-        即：
-        [True, True, True, False, False, False, True, True, True, False, False, False]
-        其中True代表文本，False代表图片
+        The following codes aim to get kv_cache_mask
         """
         bsz = len(input_ids)
-        for i in range(bsz):  # 处理每个batch
+        for i in range(bsz): 
             kv_cache_mask.append([])
             num_images = (input_ids[i] == IMAGE_TOKEN_INDEX).sum()
             if num_images == 0:
-                kv_cache_mask[i].extend([True] * len(input_ids[i]))  # 全都是纯文本，都留下！
+                kv_cache_mask[i].extend([True] * len(input_ids[i]))
                 continue
             else:
                 cur_input_ids = input_ids[i]   # [-1, 69, 92, 111, 137, 157, 167]
                 image_token_indices = [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]]
-                text_length_before_every_image = [image_token_indices[i] - image_token_indices[i - 1] - 1 for i in range(1, len(image_token_indices))]  # 这个列表最后一个值相当于是最后一张图片后有多少个文本
+                text_length_before_every_image = [image_token_indices[i] - image_token_indices[i - 1] - 1 for i in range(1, len(image_token_indices))] 
                 last_value = text_length_before_every_image.pop()
 
                 assert len(text_length_before_every_image) == num_images
                 for idx in range(len(text_length_before_every_image)):
-                    cur_image_length = image_features[idx].shape[0]  # 拿到了当前图片的length
-                    text_length = text_length_before_every_image[idx]  # 拿到了当前图片前面的文本长度
-                    kv_cache_mask[i].extend([True] * text_length)  # 当前图片前面的文本都标为True
-                    kv_cache_mask[i].extend([False] * cur_image_length)  # 当前图片标为False
-                kv_cache_mask[i].extend([True] * last_value)  # 最后一张图片后面的文本都标为True
+                    cur_image_length = image_features[idx].shape[0]  
+                    text_length = text_length_before_every_image[idx]  
+                    kv_cache_mask[i].extend([True] * text_length)  
+                    kv_cache_mask[i].extend([False] * cur_image_length)  
+                kv_cache_mask[i].extend([True] * last_value)  
 
 
         # rank_print("Inserting Images embedding")
@@ -536,7 +520,7 @@ class LlavaMetaForCausalLM(ABC):
 
         new_input_embeds = [x[:tokenizer_model_max_length] for x, modality in zip(new_input_embeds, modalities)]
         new_labels = [x[:tokenizer_model_max_length] for x, modality in zip(new_labels, modalities)]
-        kv_cache_mask = [x[:tokenizer_model_max_length] for x in kv_cache_mask]   # 也得跟着截断
+        kv_cache_mask = [x[:tokenizer_model_max_length] for x in kv_cache_mask] 
         # TODO: Hard code for control loss spike
         # if tokenizer_model_max_length is not None:
         #     new_input_embeds = [x[:4096] if modality != "video" else x[:tokenizer_model_max_length] for x, modality in zip(new_input_embeds, modalities)]
@@ -555,7 +539,7 @@ class LlavaMetaForCausalLM(ABC):
         for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)):
             cur_len = cur_new_embed.shape[0]
             if getattr(self.config, "tokenizer_padding_side", "right") == "left":
-                kv_cache_mask[i] = [True] * (max_len - cur_len) + kv_cache_mask[i]   # 补齐mask
+                kv_cache_mask[i] = [True] * (max_len - cur_len) + kv_cache_mask[i] 
                 new_input_embeds_padded.append(torch.cat((torch.zeros((max_len - cur_len, cur_new_embed.shape[1]), dtype=cur_new_embed.dtype, device=cur_new_embed.device), cur_new_embed), dim=0))
                 if cur_len > 0:
                     new_labels_padded[i, -cur_len:] = cur_new_labels
@@ -593,7 +577,7 @@ class LlavaMetaForCausalLM(ABC):
             position_ids[:, split_position:] += right_add
         # import pdb; pdb.set_trace()
         # rank0_print("Finish preparing")
-        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels, kv_cache_mask   # FIXME 增加了最后的返回值
+        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels, kv_cache_mask  
     
 
     def prepare_inputs_labels_for_multimodal(self, input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities=["image"], image_sizes=None):
@@ -672,8 +656,6 @@ class LlavaMetaForCausalLM(ABC):
                                         concat_slow_fater_token.append(torch.cat((faster_video_feature[_], self.model.faster_token[None].to(image_feature.device)), dim=0))
                                 # import pdb; pdb.set_trace()
                                 image_feature = torch.cat(concat_slow_fater_token)
-
-                                # print("!!!!!!!!!!!!")
                         
                             new_image_features.append(image_feature)
                         elif mm_newline_position == "frame":
@@ -901,7 +883,7 @@ class LlavaMetaForCausalLM(ABC):
             position_ids[:, split_position:] += right_add
         # import pdb; pdb.set_trace()
         # rank0_print("Finish preparing")
-        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels   # FIXME 增加了最后的返回值
+        return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels 
 
     def prepare_sparse_inputs_labels_for_multimodal(self, input_ids, position_ids, attention_mask, past_key_values, labels, images, modalities=["image"], image_sizes=None):
             assert input_ids.shape[0] == 1, 'sparsevlm on llava_onevision with anyres only support batch size = 1'
@@ -935,8 +917,6 @@ class LlavaMetaForCausalLM(ABC):
                 concat_images = torch.cat([image for image in images_list], dim=0)
                 split_sizes = [image.shape[0] for image in images_list]
                 encoded_image_features = self.encode_images(concat_images)
-                # image_features,all_faster_video_features = self.encode_multimodals(concat_images, video_idx_in_batch, split_sizes)
-
                 # This is a list, each element is [num_images, patch * patch, dim]
                 # rank_print(f"Concat images : {concat_images.shape}")
                 encoded_image_features = torch.split(encoded_image_features, split_sizes)
@@ -946,9 +926,6 @@ class LlavaMetaForCausalLM(ABC):
                         image_features.append(self.get_2dPool(image_feat))
                     else:
                         image_features.append(image_feat)
-                # image_features = self.encode_multimodals(concat_images, video_idx_in_batch, split_sizes)
-                # rank_print(f"Encoded image feats : {[x.shape for x in image_features]}")
-                # image_features = torch.split(image_features, split_sizes, dim=0)
                 mm_patch_merge_type = getattr(self.config, "mm_patch_merge_type", "flat")
                 image_aspect_ratio = getattr(self.config, "image_aspect_ratio", "square")
                 mm_newline_position = getattr(self.config, "mm_newline_position", "one_token")
@@ -982,8 +959,6 @@ class LlavaMetaForCausalLM(ABC):
                                             concat_slow_fater_token.append(torch.cat((faster_video_feature[_], self.model.faster_token[None].to(image_feature.device)), dim=0))
                                     # import pdb; pdb.set_trace()
                                     image_feature = torch.cat(concat_slow_fater_token)
-
-                                    # print("!!!!!!!!!!!!")
                             
                                 new_image_features.append(image_feature)
                             elif mm_newline_position == "frame":
@@ -1090,21 +1065,20 @@ class LlavaMetaForCausalLM(ABC):
                 attention_mask = torch.ones_like(input_ids, dtype=torch.bool)
             else:
                 attention_mask = attention_mask.bool()
-            if position_ids is None:    #  用input_ids的长度来填充position_ids
+            if position_ids is None:   
                 position_ids = torch.arange(0, input_ids.shape[1], dtype=torch.long, device=input_ids.device)
             if labels is None:
                 labels = torch.full_like(input_ids, IGNORE_INDEX)
 
-            # remove the padding using attention_mask -- FIXME
-            # 决定哪些部分需要被mask掉
+
             _input_ids = input_ids
             input_ids = [cur_input_ids[cur_attention_mask] for cur_input_ids, cur_attention_mask in zip(input_ids, attention_mask)]
             labels = [cur_labels[cur_attention_mask] for cur_labels, cur_attention_mask in zip(labels, attention_mask)]
             
-            new_input_embeds = []   # 下面那个大的for循环，也就是把pre_prompt_embedding , image_embedding , question_embedding给拼接起来
+            new_input_embeds = [] 
             new_labels = []
             cur_image_idx = 0
-            pre_prompt_length_list = []      # 记录哪些token是预先的prompt，这些token不进行稀疏化
+            pre_prompt_length_list = []  
             for batch_idx, cur_input_ids in enumerate(input_ids):
                 num_images = (cur_input_ids == IMAGE_TOKEN_INDEX).sum()
                 if num_images == 0:
@@ -1115,20 +1089,19 @@ class LlavaMetaForCausalLM(ABC):
                     new_labels.append(labels[batch_idx])
                     cur_image_idx += 1
                     continue
-                # 因为他input的格式是<pre_prompt><image><question>，<image>是一个分隔符，下面这行代码是为了找到<image>的位置,如[-1, 35, 93]
                 image_token_indices = [-1] + torch.where(cur_input_ids == IMAGE_TOKEN_INDEX)[0].tolist() + [cur_input_ids.shape[0]] 
                 pre_prompt_length_list.append(image_token_indices[1])
-                cur_input_ids_noim = [] # 以列表的方式存入input，将<image>分隔符删除，也即[ <pre_prompt> , <question> ]
+                cur_input_ids_noim = [] 
                 cur_labels = labels[batch_idx]
-                cur_labels_noim = []    # 以列表的方式存入label，将<image>分隔符删除，也即[ <pre_prompt> , <question> ]
+                cur_labels_noim = []  
                 for i in range(len(image_token_indices) - 1):
                     cur_input_ids_noim.append(cur_input_ids[image_token_indices[i]+1:image_token_indices[i+1]])
                     cur_labels_noim.append(cur_labels[image_token_indices[i]+1:image_token_indices[i+1]])
-                split_sizes = [x.shape[0] for x in cur_labels_noim] # [35, 57]
-                cur_input_embeds = self.get_model().embed_tokens(torch.cat(cur_input_ids_noim)) # 相当于不对<image>这个标识符进行embedding，torch.Size([92, 4096])
-                cur_input_embeds_no_im = torch.split(cur_input_embeds, split_sizes, dim=0)  # 再将embedding分成<pre_prompt>、<question>两部分
-                cur_new_input_embeds = [] # 在for循环后变成[ pre_prompt_embedding , image_embedding , question_embedding ]，[35,576,57]
-                cur_new_labels = []     # 在for循环后变成[ pre_prompt_embedding , image_embedding , question_embedding ]，[35,576,57]
+                split_sizes = [x.shape[0] for x in cur_labels_noim] 
+                cur_input_embeds = self.get_model().embed_tokens(torch.cat(cur_input_ids_noim)) 
+                cur_input_embeds_no_im = torch.split(cur_input_embeds, split_sizes, dim=0)  
+                cur_new_input_embeds = [] 
+                cur_new_labels = []    
 
                 for i in range(num_images + 1):
                     cur_new_input_embeds.append(cur_input_embeds_no_im[i])
@@ -1136,13 +1109,13 @@ class LlavaMetaForCausalLM(ABC):
                     if i < num_images:
                         cur_image_features = image_features[cur_image_idx]
                         cur_image_idx += 1
-                        cur_new_input_embeds.append(cur_image_features) # 之前不是没把那个<image>标识符给embedding嘛，其实就是为了这一步，把<image>标识符换成真正的image_features
+                        cur_new_input_embeds.append(cur_image_features) 
                         cur_new_labels.append(torch.full((cur_image_features.shape[0],), IGNORE_INDEX, device=cur_labels.device, dtype=cur_labels.dtype))
-                        # 把这个image_features对应的label全部设为IGNORE_INDEX
+
                 cur_new_input_embeds = [x.to(self.device) for x in cur_new_input_embeds]    
 
-                cur_new_input_embeds = torch.cat(cur_new_input_embeds)  # 把他们拼接成一个tensor
-                cur_new_labels = torch.cat(cur_new_labels) # 把他们拼接成一个tensor
+                cur_new_input_embeds = torch.cat(cur_new_input_embeds) 
+                cur_new_labels = torch.cat(cur_new_labels) 
 
                 new_input_embeds.append(cur_new_input_embeds)
                 new_labels.append(cur_new_labels)
@@ -1153,15 +1126,15 @@ class LlavaMetaForCausalLM(ABC):
                 new_input_embeds = [x[:tokenizer_model_max_length] for x in new_input_embeds]
                 new_labels = [x[:tokenizer_model_max_length] for x in new_labels]
 
-            # Combine them      下面这部分代码主要是，把一个batch内的input填充到相同的维度，比如有的input是[1,4096],有的是[668,4096],那么就将他们都填充到[668,4096]
+            # Combine them      
             max_len = max(x.shape[0] for x in new_input_embeds)
             batch_size = len(new_input_embeds)
-            #  用IGNORE_INDEX填充label，用0填充attention_mask和position_ids
+            
             new_input_embeds_padded = []
             new_labels_padded = torch.full((batch_size, max_len), IGNORE_INDEX, dtype=new_labels[0].dtype, device=new_labels[0].device)
             attention_mask = torch.zeros((batch_size, max_len), dtype=attention_mask.dtype, device=attention_mask.device)
             position_ids = torch.zeros((batch_size, max_len), dtype=position_ids.dtype, device=position_ids.device)
-            token_length_list = []      # 这个list是为了后续把填充的token给mask掉
+            token_length_list = []      
             for i, (cur_new_embed, cur_new_labels) in enumerate(zip(new_input_embeds, new_labels)):
                 cur_len = cur_new_embed.shape[0]
                 token_length_list.append(cur_len)
@@ -1184,7 +1157,7 @@ class LlavaMetaForCausalLM(ABC):
                         attention_mask[i, :cur_len] = True
                         position_ids[i, :cur_len] = torch.arange(0, cur_len, dtype=position_ids.dtype, device=position_ids.device)
 
-            new_input_embeds = torch.stack(new_input_embeds_padded, dim=0)  # 把列表里的元素拼接
+            new_input_embeds = torch.stack(new_input_embeds_padded, dim=0)  
 
             if _labels is None:
                 new_labels = None
@@ -1201,7 +1174,7 @@ class LlavaMetaForCausalLM(ABC):
             self.image_shape = image_features[0].shape[0]
             self.token_length_list = token_length_list
             self.pre_prompt_length_list = pre_prompt_length_list
-            self.model.init_token_total_shape = max_len       # 这个参数用于初始化policy
+            self.model.init_token_total_shape = max_len       
 
             return None, position_ids, attention_mask, past_key_values, new_input_embeds, new_labels,image_features[0].shape[0],token_length_list,pre_prompt_length_list
 

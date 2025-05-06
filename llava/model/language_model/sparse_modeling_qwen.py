@@ -546,7 +546,7 @@ class Qwen2SparseAttention(Qwen2Attention):
         # upcast attention to fp32
         attn_weights = nn.functional.softmax(attn_weights, dim=-1, dtype=torch.float32)
         
-        if self.layer_idx in [2, 5, 13, 17] and q_len > 1:   # 在目标层，并且prefill阶段
+        if self.layer_idx in [2, 5, 13, 17] and q_len > 1: 
             attn_logits = attn_weights
         else:
             attn_logits = None
@@ -568,12 +568,8 @@ class Qwen2SparseAttention(Qwen2Attention):
 
         if not output_attentions:
             attn_weights = None
-        
-        # del attn_weights
-        # torch.cuda.empty_cache()
 
-        return attn_output, None, past_key_value, attn_logits     # 把attn_weights置为None，强制删掉
-
+        return attn_output, None, past_key_value, attn_logits  
 
 class Qwen2FlashAttention2(Qwen2Attention):
     """
@@ -738,7 +734,7 @@ class Qwen2SparseSdpaAttention(Qwen2SdpaAttention):
         # Change 
         if len(position_ids[0]) == 1:
             position_ids = torch.tensor([[past_key_value.get_usable_length(kv_seq_len, self.layer_idx)]], dtype=torch.int64).cuda()
-            position_embeddings = None   # 这里强制置为None，逼着走778line重新计算
+            position_embeddings = None
 
         # if position_embeddings is None:
         #     logger.warning_once(
@@ -892,9 +888,7 @@ class Qwen2SparseDecoderLayer(Qwen2DecoderLayer):
             outputs += (self_attn_weights,)
 
         if use_cache:
-            outputs += (present_key_value,)
-
-        # outputs += (attn_logits,)         # 去掉了
+            outputs += (present_key_value,) 
 
         return outputs, attn_logits
 
@@ -1015,12 +1009,9 @@ class Qwen2SparseModel(Qwen2Model):    # change here
         #  -------------------------------------change for sparse ----------------------------------------------
         assert self.training == False, 'self.training is True. Only support inference.'
         
-        # num_token = []
         B, L, _ = hidden_states.shape
         idx_sprase_layer = 0
-        # out_pred_prob = None
         init_n = self.init_token_total_shape + self.generate_process_count
-        # prev_decision = torch.ones(B, init_n, 1, dtype=hidden_states.dtype, device=hidden_states.device)
         policy = torch.ones(B, init_n, 1, dtype=hidden_states.dtype, device=hidden_states.device)
 
         v_token_start = pre_prompt_length_list[0] if len(pre_prompt_length_list) != 0 else 0
@@ -1030,9 +1021,9 @@ class Qwen2SparseModel(Qwen2Model):    # change here
         # Select text raters: Section 3.2.2
         v_t = hidden_states[:, v_token_start: text_token_start, :]
         t_t = hidden_states[:, text_token_start: , :]
-        m_v_t = v_t.float() @ t_t.transpose(1, 2).float()       # [1, 576, 53]   [1, 2800, 140]  bsz, v_token_num, t_token_num
-        m_v_t = m_v_t.softmax(2).mean(1) # [1, 53]    bsz, t_token_num
-        t_token_idx = torch.where(m_v_t > m_v_t.mean())   # 正常来说t_token_idx[1]才是下标，这里的下标已经从小到大排了。但是是从text_token_start开始，即text_token_start=0来算的
+        m_v_t = v_t.float() @ t_t.transpose(1, 2).float()       # bsz, v_token_num, t_token_num
+        m_v_t = m_v_t.softmax(2).mean(1) # bsz, t_token_num
+        t_token_idx = torch.where(m_v_t > m_v_t.mean())  
         del m_v_t
 
         for layer_idx, decoder_layer in enumerate(self.layers):
@@ -1050,12 +1041,12 @@ class Qwen2SparseModel(Qwen2Model):    # change here
                         # position_embeddings=position_embeddings
                 )
 
-                select_visual_token_num = max(1, int(v_token_num * self.ratio * 0.7))   # FIXME  固定30% 用于merge， 70% 用于select
+                select_visual_token_num = max(1, int(v_token_num * self.ratio * 0.7)) 
                 merge_visual_token_num = max(1, int(v_token_num * self.ratio * 0.3))
 
 
                 pred_score_vis, s_flag, relation_vis_text = attn_postprocess_rank(attn_logits, v_token_start, v_token_num, \
-                    text_token_start, t_token_idx, scale=scale, bias=bias, select_num = select_visual_token_num) # B, L_v     the first is mask
+                    text_token_start, t_token_idx, scale=scale, bias=bias, select_num = select_visual_token_num) # B, L_v 
 
                 del attn_logits
 
@@ -1068,25 +1059,25 @@ class Qwen2SparseModel(Qwen2Model):    # change here
                     policy[batch,:prompt_length,] = 1
                     # keep question
                     text_token_start = prompt_length + image_shape
-                    policy[batch, text_token_start:,] = 1   #   把 system和question部分都强制保留
+                    policy[batch, text_token_start:,] = 1  
 
                 # Recycle: Section 3.3
                 if s_flag:
                     total_sparse_token_idx = torch.where(policy == 0)[1].unsqueeze(0)  
                     total_sparse_token = batch_index_select(layer_outputs[0], total_sparse_token_idx) 
                     
-                    merge_token_idx_stage1 = torch.where(pred_score_vis==0)[1]   # 被剪掉的visual token下标，从visual start开始
-                    merge_token_stage1 = relation_vis_text[0][merge_token_idx_stage1]  # 拿到了被剪掉的visual token的那一行的attn
+                    merge_token_idx_stage1 = torch.where(pred_score_vis==0)[1]   
+                    merge_token_stage1 = relation_vis_text[0][merge_token_idx_stage1]  
                     # merge_token_num_stage1 = int(merge_token_idx_stage1.shape[0] * 1.0) + 1
-                    merge_token_num_stage1 = merge_visual_token_num   # FIXME  固定merge个数了
-                    merge_token_stage2_idx = merge_token_stage1.topk(merge_token_num_stage1)[1]  # N * tao个的下标，从visual start开始
+                    merge_token_num_stage1 = merge_visual_token_num 
+                    merge_token_stage2_idx = merge_token_stage1.topk(merge_token_num_stage1)[1]  
                     
                     merge_token_stage2 = total_sparse_token[:,merge_token_stage2_idx,:]
                     cluster_num = max(1, int(merge_token_stage2.shape[1] / 10))       # 1/10
                     if (cluster_num == 0) :
                         cluster_num = merge_token_stage2.shape[1]
                     
-                    merge_sparse_token = cluster_and_merge(merge_token_stage2, cluster_num, origin_device=merge_token_stage2.device)     #  FIXME  为了做测试现在删掉了
+                    merge_sparse_token = cluster_and_merge(merge_token_stage2, cluster_num, origin_device=merge_token_stage2.device)     
 
                     select_token_idx = torch.where(policy == 1)[1].unsqueeze(0)  # B, L_new
                     select_token = batch_index_select(layer_outputs[0], select_token_idx)
@@ -1097,16 +1088,11 @@ class Qwen2SparseModel(Qwen2Model):    # change here
                             ,dim=1
                     )
 
-                    # select_and_merge_token = torch.cat((select_token[:,:v_token_start+select_vis_token_num,:] ,        # FIXME  重写了这里，因为去掉了merge部分
-                    #         select_token[:,v_token_start+select_vis_token_num:,:])
-                    #         ,dim=1)
 
                     layer_outputs = (select_and_merge_token, layer_outputs[1])  # B, L, C
-                    position_ids = position_ids[:, :len(select_token_idx[0])+cluster_num]         # FIXME  因为现在实际上没有merge，所以需要把cluster_num去掉
-                    # position_ids = position_ids[:, :len(select_token_idx[0])]
-                    # prev_decision = policy
+                    position_ids = position_ids[:, :len(select_token_idx[0])+cluster_num]       
                     # update
-                    v_token_num = pred_score_vis.sum() + cluster_num # B == 1                 #  FIXME 同上，去掉了最后
+                    v_token_num = pred_score_vis.sum() + cluster_num # B == 1      
                     # v_token_num = pred_score_vis.sum()
                     text_token_start = v_token_start + v_token_num
                 else:
@@ -1161,13 +1147,6 @@ class Qwen2SparseModel(Qwen2Model):    # change here
             if output_attentions:
                 all_self_attns += (layer_outputs[1],)
 
-            # num_token.append(v_token_num)
-        
-        # if len(pre_prompt_length_list) != 0 and hidden_states.shape[1] !=1:
-        #     self.num_forward += 1
-        #     self.num_token_pool += (sum(num_token) / self.num_layers)
-        #     print("equal token number utill now: ", self.num_token_pool / self.num_forward)
-
         hidden_states = self.norm(hidden_states)
 
         # add hidden states from the last decoder layer
@@ -1189,7 +1168,7 @@ class Qwen2SparseModel(Qwen2Model):    # change here
         )
 
 
-class Qwen2SparseForCausalLM(Qwen2ForCausalLM):                                   # FIXME   new class
+class Qwen2SparseForCausalLM(Qwen2ForCausalLM):                                  
 
     def __init__(self, config):
         super(Qwen2ForCausalLM,self).__init__(config)

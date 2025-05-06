@@ -31,4 +31,4 @@ generated_ids = model.generate(**inputs, max_new_tokens=128)
 output_text = processor.batch_decode(
     generated_ids, skip_special_tokens=True, clean_up_tokenization_spaces=False
 )
-print(output_text)
+print(output_text)  
