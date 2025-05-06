@@ -131,7 +131,7 @@ def siglip_EncoderLayer_forward(self,
         if output_attentions:
             outputs += (attn_weights,)
 
-        if self.layer_idx == 24:   # 倒数第二层
+        if self.layer_idx == 24:   # the second to last floor
             self.metric = metric
             self.hidden_states = hidden_states              # change
 
@@ -163,7 +163,7 @@ def siglip_vision_tower_forward(self, images):
         # all_indices = torch.cat([torch.zeros((hidden_states.shape[0], 1), dtype=topk_indices.dtype, device=topk_indices.device), topk_indices], dim=1)
         
         all_indices = attention_sum.topk(dominant_num, dim=1).indices
-        mask = torch.ones_like(hidden_states[:, :, 0], dtype=torch.bool, device=metric.device).scatter_(1, all_indices, False)  # [3, 729]  哪些需要被删掉
+        mask = torch.ones_like(hidden_states[:, :, 0], dtype=torch.bool, device=metric.device).scatter_(1, all_indices, False)  # [3, 729] 
         dominant_tokens = hidden_states.masked_select(~mask.unsqueeze(-1)).view(hidden_states.shape[0], dominant_num, hidden_states.shape[2])
         
         ### Filter
@@ -175,14 +175,14 @@ def siglip_vision_tower_forward(self, images):
 
         ## Contextual Visual Tokens
         step = max(1, metric_normalized.shape[1] // contextual_num)
-        target_indices = torch.arange(0, metric_normalized.shape[1], step, device=metric_normalized.device)[:contextual_num]  # 均匀采样
+        target_indices = torch.arange(0, metric_normalized.shape[1], step, device=metric_normalized.device)[:contextual_num]
         target_tokens = metric_normalized[:, target_indices, :]  # [3, 10, 72]
 
         tokens_to_merge = metric_normalized[:, ~torch.isin(torch.arange(metric_normalized.shape[1], device=metric_normalized.device), target_indices), :]   # [3, 665, 72]
         similarity = torch.bmm(tokens_to_merge.float(), target_tokens.transpose(1, 2).float())   # [3, 665, 10]    FIXME  change here
         assign_one_hot = torch.zeros(tokens_to_merge.shape[0], tokens_to_merge.shape[1], contextual_num, dtype=hidden_states_filtered.dtype, device=metric_normalized.device)
         assign_one_hot.scatter_(2, similarity.argmax(dim=2).unsqueeze(-1), 1)
-        counts = assign_one_hot.sum(dim=1).clamp(min=1).unsqueeze(-1)       # 计算每个聚类中心分配到的token的数量
+        counts = assign_one_hot.sum(dim=1).clamp(min=1).unsqueeze(-1)
         hidden_to_merge = hidden_states_filtered[:, ~torch.isin(torch.arange(hidden_states_filtered.shape[1], device=hidden_states_filtered.device), target_indices), :]
         aggregated_hidden = (torch.bmm(assign_one_hot.transpose(1, 2).float(), hidden_to_merge.float()) / counts).to(torch.bfloat16) # [3, 10, 1152]   FIXME  change here
         target_hidden = hidden_states_filtered[:, target_indices, :]  # [3, 10, 1152]
@@ -301,11 +301,6 @@ def prepare_inputs_labels_for_multimodal_visionzip(self, input_ids, position_ids
 
                 fake_image[mask] = dominant_feature.reshape(-1, hidden_size)  
                 
-                # for i in range(num_patches):
-                #     keep_indices = current_keep_idx[i]  # 当前 patch 对应的索引
-                #     for j, keep_idx in enumerate(keep_indices):
-                #         # 将 dominant_feature 的对应位置填充到 fake_image 中
-                #         fake_image[i, keep_idx, :] = dominant_feature[i, j, :]
                 
                 image_features.append(fake_image)   # FIXME change here
 
@@ -627,7 +622,6 @@ def outlier_dectection_prumerge_plus(attn):
         ratio = len(outlier_indices) / len(cur_attn)
         ratios.append(ratio)
     
-    # 返回每个batch的ratio平均值
     return sum(ratios) / len(ratios)
 
 def token_prune_merge_advanced_prumerge_plus(self, images, multi_images, if_adaptive=True):
@@ -827,12 +821,6 @@ def prepare_inputs_labels_for_multimodal_prumerge_plus(self, input_ids, position
                 mask.scatter_(1, cur_keep_idx_sorted_restore, True) 
 
                 fake_image[mask] = dominant_feature.reshape(-1, hidden_size)  
-                
-                # for i in range(num_patches):
-                #     keep_indices = current_keep_idx[i]  # 当前 patch 对应的索引
-                #     for j, keep_idx in enumerate(keep_indices):
-                #         # 将 dominant_feature 的对应位置填充到 fake_image 中
-                #         fake_image[i, keep_idx, :] = dominant_feature[i, j, :]
                 
                 image_features.append(fake_image)   # FIXME change here
 

@@ -204,16 +204,16 @@ def merge_kv(key_states, value_states, indices, window_size, merge):
 class StreamingLLMKVCluster():
     def __init__(self, query_len, budgets, window_size_budgets=0.1, merge=None):
         self.query_len = query_len
-        self.budgets = budgets  # 保留比
+        self.budgets = budgets  
         self.max_capacity_prompt = max(1, int(query_len * budgets))
-        self.window_size_budgets = window_size_budgets  # 窗口大小比
+        self.window_size_budgets = window_size_budgets  
         self.window_size = max(1, int(self.max_capacity_prompt * window_size_budgets))
         self.merge = merge
 
     def reset(self, budgets, window_size_budgets=0.1, merge=None):
         self.query_len = None
-        self.budgets = budgets  # 保留比
-        self.window_size_budgets = window_size_budgets  # 窗口大小比
+        self.budgets = budgets
+        self.window_size_budgets = window_size_budgets
         self.window_size = None
         self.max_capacity_prompt = None
         self.merge = merge
@@ -249,17 +249,17 @@ class StreamingLLMKVCluster():
 class H2OKVCluster():
     def __init__(self, query_len, budgets, window_size_budgets=0.1, head_adaptive=True, merge=None):
         self.query_len = query_len
-        self.budgets = budgets  # 保留比
+        self.budgets = budgets 
         self.max_capacity_prompt = max(1, int(query_len * budgets))
-        self.window_size_budgets = window_size_budgets  # 窗口大小比
+        self.window_size_budgets = window_size_budgets 
         self.window_size = max(1, int(self.max_capacity_prompt * window_size_budgets))
         self.head_adaptive = head_adaptive
         self.merge = merge
 
     def reset(self, budgets, window_size_budgets=0.1, head_adaptive=True, merge=None):
         self.query_len = None
-        self.budgets = budgets  # 保留比
-        self.window_size_budgets = window_size_budgets  # 窗口大小比
+        self.budgets = budgets 
+        self.window_size_budgets = window_size_budgets
         self.window_size = None
         self.max_capacity_prompt = None
         self.merge = merge
@@ -407,24 +407,37 @@ class VlCacheKVCluster():
         '''
         Called in the forward function of Qwen2Attention, Calculate the sparsity of this layer based on attn_weights_postvision
         '''
-        # get max scores from one row
-        max_scores, _ = torch.max(
-            attn_weights_postvison, axis=-1, keepdims=True)
-        # filter the attn_weights_postvison
-        filtered_attn_weights = (
-            attn_weights_postvison >= 0.01 * max_scores).int()
-        # get nonzero entries
-        nonzero_entries = (filtered_attn_weights > 0).sum(
-            dim=(-2, -1)).to(torch.float32)
-        matrix_tril = torch.tril(torch.ones(
-            (q_len, q_len), device=attn_weights_postvison.device))[-post_vision_size:, :]
-        num_elements_denominator = matrix_tril.count_nonzero().to(torch.float32)
-        # get sparsity of each layer
-        sparsity = (num_elements_denominator - nonzero_entries) / \
-            num_elements_denominator
+        # # get max scores from one row
+        # max_scores, _ = torch.max(
+        #     attn_weights_postvison, axis=-1, keepdims=True)
+        # # filter the attn_weights_postvison
+        # filtered_attn_weights = (
+        #     attn_weights_postvison >= 0.01 * max_scores).int()
+        # # get nonzero entries
+        # nonzero_entries = (filtered_attn_weights > 0).sum(
+        #     dim=(-2, -1)).to(torch.float32)
+        # matrix_tril = torch.tril(torch.ones(
+        #     (q_len, q_len), device=attn_weights_postvison.device))[-post_vision_size:, :]
+        # num_elements_denominator = matrix_tril.count_nonzero().to(torch.float32)
+        # # get sparsity of each layer
+        # sparsity = (num_elements_denominator - nonzero_entries) / \
+        #     num_elements_denominator
+        # sparsity_layer = sparsity.mean()
+        # sparsity_layer_tuple = (sparsity_layer,)
+        # return sparsity_layer_tuple
+
+        max_scores = torch.max(attn_weights_postvison, dim=-1, keepdim=True)[0]
+        filtered_attn_weights = (attn_weights_postvison >= 0.01 * max_scores).float()
+        nonzero_entries = filtered_attn_weights.sum(dim=(-2, -1))
+        num_elements_denominator = torch.tensor(
+            sum(range(q_len - post_vision_size + 1, q_len + 1)), 
+            device=attn_weights_postvison.device,
+            dtype=torch.float32
+        )
+        sparsity = (num_elements_denominator - nonzero_entries) / num_elements_denominator
         sparsity_layer = sparsity.mean()
-        sparsity_layer_tuple = (sparsity_layer,)
-        return sparsity_layer_tuple
+        
+        return (sparsity_layer,)
 
     def get_budget_layer_and_sorted_attn_kv_indices(
         self,
@@ -446,15 +459,18 @@ class VlCacheKVCluster():
         # different budget for each layer
         if self.vlcache_budget_layer_adaptive:
             # Support different window sizes for each layer
-            for l in range(layers):
-                if self.vlcache_different_window_per_layer:
-                    # different window size for each layer
-                    buget_layers[l] = torch.clamp(
-                        (1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * layers, min=0.01, max=1.0)
-                else:
-                    # same window size for each layer , 10% budget for each layer
-                    buget_layers[l] = torch.clamp(
-                        (1.0 - sparsity_tensor[l]) / non_sparsity_sum * self.vlcache_alpha_sparsity * 0.9 * layers, min=0.01 * 0.9, max=1.0)
+            if self.vlcache_different_window_per_layer:
+            # different window size for each layer
+                buget_layers = torch.clamp(
+                    (1.0 - sparsity_tensor) / non_sparsity_sum * self.vlcache_alpha_sparsity * layers, 
+                    min=0.01, 
+                    max=1.0)
+            else:
+            # same window size for each layer , 10% budget for each layer
+                buget_layers = torch.clamp(
+                    (1.0 - sparsity_tensor) / non_sparsity_sum * self.vlcache_alpha_sparsity * 0.9 * layers, 
+                    min=0.01 * 0.9, 
+                    max=1.0)
         # same budget for each layer
         else:
             if self.vlcache_different_window_per_layer:
@@ -508,22 +524,30 @@ class VlCacheKVCluster():
         head_dim = past_key_states.shape[-1]
         seq_len = sorted_attn_kv_indices.shape[-1]
 
-        # Initialize new tensors with the right shape
-        new_key_states = torch.zeros((batch_size, num_heads, seq_len, head_dim),
-                                     dtype=past_key_states.dtype,
-                                     device=past_key_states.device)
-        new_value_states = torch.zeros((batch_size, num_heads, seq_len, head_dim),
-                                       dtype=past_value_states.dtype,
-                                       device=past_value_states.device)
+        # # Initialize new tensors with the right shape
+        # new_key_states = torch.zeros((batch_size, num_heads, seq_len, head_dim),
+        #                              dtype=past_key_states.dtype,
+        #                              device=past_key_states.device)
+        # new_value_states = torch.zeros((batch_size, num_heads, seq_len, head_dim),
+        #                                dtype=past_value_states.dtype,
+        #                                device=past_value_states.device)
 
-        # Reorder each head separately
-        for head_idx in range(num_heads):
-            new_key_states[:, head_idx] = past_key_states[:,
-                                                          head_idx, sorted_attn_kv_indices[head_idx]]
-            new_value_states[:, head_idx] = past_value_states[:,
-                                                              head_idx, sorted_attn_kv_indices[head_idx]]
+        # # Reorder each head separately
+        # for head_idx in range(num_heads):
+        #     new_key_states[:, head_idx] = past_key_states[:,
+        #                                                   head_idx, sorted_attn_kv_indices[head_idx]]
+        #     new_value_states[:, head_idx] = past_value_states[:,
+        #                                                       head_idx, sorted_attn_kv_indices[head_idx]]
 
-        # Update the cache
+        # # Update the cache
+        # past_key_value.key_cache[layer_idx] = new_key_states
+        # past_key_value.value_cache[layer_idx] = new_value_states
+
+        expanded_indices = sorted_attn_kv_indices.unsqueeze(0).unsqueeze(-1).expand(batch_size, num_heads, seq_len, head_dim)
+
+        new_key_states = torch.gather(past_key_states, dim=2, index=expanded_indices)
+        new_value_states = torch.gather(past_value_states, dim=2, index=expanded_indices)
+
         past_key_value.key_cache[layer_idx] = new_key_states
         past_key_value.value_cache[layer_idx] = new_value_states
 
@@ -903,9 +927,9 @@ class SnapKVCluster():
                  pooling='avgpool',
                  merge=None):
         self.query_len = query_len
-        self.budgets = budgets  # 保留比
+        self.budgets = budgets 
         self.max_capacity_prompt = max(1, int(query_len * budgets))
-        self.window_size_budgets = window_size_budgets  # 窗口大小比
+        self.window_size_budgets = window_size_budgets
         self.window_size = max(1, int(self.max_capacity_prompt * window_size_budgets))
         self.head_adaptive = head_adaptive
         self.pooling = pooling
@@ -921,8 +945,8 @@ class SnapKVCluster():
               merge=None):
 
         self.query_len = None
-        self.budgets = budgets  # 保留比
-        self.window_size_budgets = window_size_budgets  # 窗口大小比
+        self.budgets = budgets 
+        self.window_size_budgets = window_size_budgets
         self.window_size = None
         self.max_capacity_prompt = None
         self.merge = merge
@@ -1012,7 +1036,7 @@ class pyramidkvCluster():
         self.beta = beta
 
         self.max_capacity_prompt = max(1, int(query_len * budgets))
-        self.window_size_budgets = window_size_budgets  # 窗口大小比
+        self.window_size_budgets = window_size_budgets
         self.window_size = max(1, int(self.max_capacity_prompt * window_size_budgets))
         self.head_adaptive = head_adaptive
         self.kernel_size = kernel_size
@@ -1031,8 +1055,8 @@ class pyramidkvCluster():
               merge=None):
 
         self.query_len = None
-        self.budgets = budgets  # 保留比
-        self.window_size_budgets = window_size_budgets  # 窗口大小比
+        self.budgets = budgets 
+        self.window_size_budgets = window_size_budgets 
         self.window_size = None
         self.max_capacity_prompt = None
         self.merge = merge
@@ -1250,8 +1274,8 @@ class CSPCluster():
                 self_attn_mask = (query_img_mask & key_img_mask) | (~query_img_mask & ~key_img_mask)  # [B, H, Lq, Lk]
                 cross_attn_mask = (query_img_mask & ~key_img_mask) | (~query_img_mask & key_img_mask)  # [B, H, Lq, Lk]
 
-                attn_weights_self = attn_weights_past * self_attn_mask  # self-attn 区域
-                attn_weights_cross = attn_weights_past * cross_attn_mask  # cross-attn 区域
+                attn_weights_self = attn_weights_past * self_attn_mask  # self-attn 
+                attn_weights_cross = attn_weights_past * cross_attn_mask  # cross-attn 
                 
                 k_cross = max(1, int(k * self.cross_ratio))
                 k_self = max(1, int(k * (1-self.cross_ratio)))

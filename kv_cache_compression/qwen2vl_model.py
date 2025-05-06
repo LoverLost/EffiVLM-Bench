@@ -1279,7 +1279,7 @@ def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, gr
             hidden_states = blk(hidden_states, cu_seqlens=cu_seqlens, rotary_pos_emb=rotary_pos_emb)
 
     ## handle visionzip here ##
-    # current_result = self.merger(hidden_states)   # 在这里会将token_num / 4
+    # current_result = self.merger(hidden_states) 
 
     # attn_weights = self.blocks[-2].attn.attn_weights
     # num_heads, q_len, k_len = attn_weights.shape
@@ -1288,31 +1288,31 @@ def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, gr
     # k_len_pooled = k_len // 4
     # attn_weights = attn_weights.view(num_heads, q_len_pooled, 4, k_len_pooled, 4)  
     # attn_weights = attn_weights.mean(dim=(2, 4))
-    # attention_sum = attn_weights.mean(dim=0).mean(dim=0)   # 按头和行取平均 
+    # attention_sum = attn_weights.mean(dim=0).mean(dim=0)  
 
 
     # 算attn的第二种方式
     attn_weights = self.blocks[-2].attn.attn_weights
     num_heads, q_len, k_len = attn_weights.shape
     assert q_len == k_len, "q_len and k_len should be the same, the error is in Qwen2VisionTransformerPretrainedModel's forward function"
-    attn_weights = attn_weights.mean(dim=0).mean(dim=0)   # 按头和行取平均  shape[888]
+    attn_weights = attn_weights.mean(dim=0).mean(dim=0)  
     attention_sum = attn_weights.view(-1, 4).mean(dim=1)
     
 
     # hidden_states = self.blocks[-2].hidden_states
     # self.blocks[-2].hidden_states = None
-    hidden_states = self.merger(hidden_states)    # 也得跟着merge。。。（不知道这么做是不是最优的）
+    hidden_states = self.merger(hidden_states)   
     metric = self.blocks[-2].attn.metric
     self.blocks[-2].attn.metric = None
-    metric = metric.view(num_heads, metric.shape[1] // 4, 4, -1)   # 也要每4个token做一下平均
-    metric = metric.mean(dim=2).mean(dim=0)   # 这里需要对每个头也做一下平均
+    metric = metric.view(num_heads, metric.shape[1] // 4, 4, -1)   
+    metric = metric.mean(dim=2).mean(dim=0)   
     total_token_num = metric.shape[0]
     dominant_num = max(1, int(total_token_num * self.budgets * 5.4 / 6.4))
     contextual_num = max(1, int(total_token_num * self.budgets * 1.0 / 6.4))
     all_indices = attention_sum.topk(dominant_num, dim=0).indices   # get topk indices
     all_indices = all_indices.sort().values
     mask = torch.ones_like(hidden_states[:, 0], dtype=torch.bool, device=metric.device).scatter_(0, all_indices, False)  # which to delete  true is delete
-    filtered_indices = torch.where(mask)[0]  # 获取mask为True的位置(FIXME 待讨论)
+    filtered_indices = torch.where(mask)[0]  
     dominant_tokens = hidden_states.masked_select(~mask.unsqueeze(-1)).view(dominant_num, hidden_states.shape[1])
 
     metric_filtered = metric[mask].view(hidden_states.shape[0] - dominant_num, metric.shape[1])  # [589, 80]
@@ -1321,15 +1321,15 @@ def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, gr
 
     ## Start merge
     step = max(1, metric_normalized.shape[0] // contextual_num)
-    target_indices = torch.arange(0, metric_normalized.shape[0], step, device=metric_normalized.device)[:contextual_num]  # 均匀采样
-    contextual_indices = filtered_indices[target_indices]   # 获取merge token的原始下标（FIXME 待讨论）
+    target_indices = torch.arange(0, metric_normalized.shape[0], step, device=metric_normalized.device)[:contextual_num]  
+    contextual_indices = filtered_indices[target_indices]  
     target_tokens = metric_normalized[target_indices, :]  # [55, 80]  
 
     tokens_to_merge = metric_normalized[~torch.isin(torch.arange(metric_normalized.shape[0], device=metric_normalized.device), target_indices), :]   # [534,80]
     similarity = torch.matmul(tokens_to_merge.float(), target_tokens.transpose(0, 1).float())   # FIXME  change here
     assign_one_hot = torch.zeros(tokens_to_merge.shape[0], contextual_num, dtype=hidden_states_filtered.dtype, device=metric_normalized.device)
     assign_one_hot.scatter_(1, similarity.argmax(dim=1).unsqueeze(-1), 1)
-    counts = assign_one_hot.sum(dim=0).clamp(min=1).unsqueeze(-1)       # 计算每个聚类中心分配到的token的数量
+    counts = assign_one_hot.sum(dim=0).clamp(min=1).unsqueeze(-1)       
     hidden_to_merge = hidden_states_filtered[~torch.isin(torch.arange(hidden_states_filtered.shape[0], device=hidden_states_filtered.device), target_indices), :]
     aggregated_hidden = (torch.matmul(assign_one_hot.transpose(0, 1).float(), hidden_to_merge.float()) / counts).to(torch.bfloat16) # FIXME  change here
     target_hidden = hidden_states_filtered[target_indices, :] 
@@ -1338,18 +1338,15 @@ def qwen2vl_vision_tower_forward_visionzip(self, hidden_states: torch.Tensor, gr
 
     # Merge with target hidden states and concatenate
     # hidden_states_save = torch.cat([dominant_tokens, contextual_tokens], dim=0).to(hidden_states.dtype)
-    # FIXME 重新修改了cat逻辑，按照两部分实际的位置进行concat。待讨论
     all_keep_indices = torch.cat([all_indices, contextual_indices])
-    all_keep_indices = all_keep_indices.sort().values  # 按位置排序
+    all_keep_indices = all_keep_indices.sort().values 
 
-    # 创建结果tensor
     hidden_states_save = torch.zeros(
         (len(all_keep_indices), hidden_states.shape[1]), 
         dtype=hidden_states.dtype,
         device=hidden_states.device
     )
 
-    # 创建映射字典,标记每个位置是dominant还是contextual token
     dominant_mask = torch.zeros(len(all_keep_indices), dtype=torch.bool, device=hidden_states.device)
     dominant_mask = torch.isin(all_keep_indices, all_indices)
 
@@ -1387,19 +1384,19 @@ def qwen2vl_vision_flash_attention2_forward_visionzip(self, hidden_states: torch
             k_here = k.transpose(0, 1)   # [num_heads, seq_len, head_dim]
             self.metric = k_here
             q_here = q.transpose(0, 1)
-            # attention_mask_here = torch.full(  # 手动算的mask，用-inf填充
+            # attention_mask_here = torch.full(  
             # [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
             # )
             # for i in range(1, len(cu_seqlens)):
-            #     attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0  # 防止不同image之间相互关注
-            # attention_mask_here = torch.full(  # 手动算的mask，用-inf填充
+            #     attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = 0  
+            # attention_mask_here = torch.full(  
             # [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
             # )
-            attention_mask_here = torch.full(  # 手动算的mask，用 True 填充
+            attention_mask_here = torch.full(  
                 [1, seq_length, seq_length], True, dtype=torch.bool, device=q.device
             )
             for i in range(1, len(cu_seqlens)):
-                attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = False  # 防止不同image之间相互关注
+                attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = False  
             attn_weights_here = torch.matmul(q_here, k_here.transpose(1, 2)) / math.sqrt(q.shape[-1])   # [num_heads, seq_len, seq_len]
             # attn_weights_here = attn_weights_here + attention_mask_here
             attn_weights_here = attn_weights_here.masked_fill(attention_mask_here, float('-inf'))
@@ -1463,7 +1460,7 @@ def qwen2vl_generation_forward_visionzip(
             pixel_values = pixel_values.type(self.visual.get_dtype())
             image_embeds, all_indices = self.visual(pixel_values, grid_thw=image_grid_thw)   # change here
             n_image_tokens = image_embeds.shape[0]   # change here
-            total_len = input_ids.shape[-1]   # 原本的总长度
+            total_len = input_ids.shape[-1]   
             assert input_ids.shape[0] == 1, 'visionzip only support single batch, assert is in qwen2vl_generation_forward_visionzip function'
             position_image_begin_token = (input_ids[0] == 151652).nonzero(as_tuple=True)[0]
             before_idx = position_image_begin_token[0].item() + 1   # before image length
@@ -1756,14 +1753,14 @@ def qwen2vl_vision_flash_attention2_forward_prumerge_plus(self, hidden_states: t
             self.metric = k.view(seq_length, -1)
             q_here = q.transpose(0, 1)
             attn_weights_here = torch.matmul(q_here, k_here.transpose(1, 2)) / math.sqrt(q.shape[-1])   # [num_heads, seq_len, seq_len]
-            # attention_mask_here = torch.full(  # 手动算的mask，用-inf填充
+            # attention_mask_here = torch.full( 
             # [1, seq_length, seq_length], torch.finfo(q.dtype).min, device=q.device, dtype=q.dtype
             # )
-            attention_mask_here = torch.full(  # 手动算的mask，用 True 填充
+            attention_mask_here = torch.full(  
             [1, seq_length, seq_length], True, dtype=torch.bool, device=q.device
             )
             for i in range(1, len(cu_seqlens)):
-                attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = False  # 防止不同image之间相互关注
+                attention_mask_here[..., cu_seqlens[i - 1] : cu_seqlens[i], cu_seqlens[i - 1] : cu_seqlens[i]] = False 
             
             attn_weights_here = attn_weights_here.masked_fill(attention_mask_here, float('-inf'))
             del k_here, q_here,attention_mask_here
@@ -1827,7 +1824,7 @@ def qwen2vl_generation_forward_prumerge_plus(
             pixel_values = pixel_values.type(self.visual.get_dtype())
             image_embeds, all_indices = self.visual(pixel_values, grid_thw=image_grid_thw)   # change here
             n_image_tokens = image_embeds.shape[0]   # change here
-            total_len = input_ids.shape[-1]   # 原本的总长度
+            total_len = input_ids.shape[-1]  
             assert input_ids.shape[0] == 1, 'prumerge only support single batch, assert is in qwen2vl_generation_forward_prumerge_plus function'
             position_image_begin_token = (input_ids[0] == 151652).nonzero(as_tuple=True)[0]
             before_idx = position_image_begin_token[0].item() + 1   # before image length
@@ -1842,8 +1839,8 @@ def qwen2vl_generation_forward_prumerge_plus(
                 device=input_ids.device
             )
             origin_input_ids = deepcopy(input_ids)   # HACK deepcopy to calculate position_ids with origin_input_ids 
-            input_ids = torch.cat((before_img, img_tensor, post_img), dim=1)   # 重新拼接
-            all_indices = all_indices + before_idx  # 重新计算图片偏移
+            input_ids = torch.cat((before_img, img_tensor, post_img), dim=1)
+            all_indices = all_indices + before_idx
             all_indices = torch.cat((torch.arange(0, before_idx, device=all_indices.device), all_indices, torch.arange(post_idx, total_len, device=all_indices.device)))   # 留下的token的下标
             inputs_embeds = inputs_embeds[:, all_indices, :]
 

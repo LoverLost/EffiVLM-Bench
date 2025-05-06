@@ -2016,7 +2016,7 @@ def qwen_attention_forward_random(
     **kwargs,
 ) -> Tuple[torch.Tensor, Optional[torch.Tensor], Optional[Tuple[torch.Tensor]]]:
     bsz, q_len, _ = hidden_states.size()
-    if q_len > 1:   # 只在prefill阶段初始化
+    if q_len > 1:   
         init_Random(self)
         if hasattr(self, "kv_seq_len"):
             self.kv_seq_len = 0
@@ -2056,10 +2056,9 @@ def qwen_attention_forward_random(
             kv_seq_len += past_key_value.get_usable_length(
                 kv_seq_len, self.layer_idx)
 
-    origin_key_states = deepcopy(key_states)  # 必须保留住原来的key，因为look-m方法需要用到
+    origin_key_states = deepcopy(key_states)  
     origin_value_states = deepcopy(value_states)
 
-    # 应该在这里拼接上kv cache
     if q_len == 1:  
         key_states = torch.cat(
             [past_key_value.key_cache[self.layer_idx], key_states], dim=2)
@@ -2092,7 +2091,7 @@ def qwen_attention_forward_random(
             key_states_compress, value_states_compress= self.kv_cache.update_kv(origin_key_states, origin_value_states)
             past_key_value.update(
                 key_states_compress, value_states_compress, self.layer_idx, cache_kwargs)
-            self.kv_seq_len = key_states_compress.shape[-2]   # 这里需要把压缩之后的长度写进去
+            self.kv_seq_len = key_states_compress.shape[-2] 
         else:
             self.kv_seq_len += q_len
             key_states, value_states = past_key_value.update(

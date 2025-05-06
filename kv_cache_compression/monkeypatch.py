@@ -93,10 +93,10 @@ def replace_qwen(args, model, method):
         for name, module in model.named_modules():
             if isinstance(module, Qwen2Attention):
                 module.forward = types.MethodType(qwen_attention_forward_vlcache, module)
-                module.vlcache_alpha_sparsity = args.budgets
-                module.vlcache_different_window_per_layer = args.vlcache_different_window_per_layer
-                module.vlcache_head_adaptive = args.vlcache_head_adaptive
-                module.vlcache_budget_layer_adaptive = getattr(args, 'vlcache_budget_layer_adaptive', True)
+                module.vlcache_alpha_sparsity = getattr(args,'budgets',1.0)
+                module.vlcache_different_window_per_layer = getattr(args,'vlcache_different_window_per_layer',False)
+                module.vlcache_head_adaptive = getattr(args,'head_adaptive',False)
+                module.vlcache_budget_layer_adaptive = getattr(args, 'layer_adaptive', True)
             if isinstance(module, Qwen2Model):
                 module.forward = types.MethodType(qwen_model_forward_vlcache, module)
 
@@ -131,22 +131,22 @@ def replace_qwen(args, model, method):
                 module.budgets = getattr(args, 'budgets', None)
                 module.origin = getattr(args, 'origin', None)
 
-    elif method == "csp":
-        print('using csp')
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_CSP
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.hh_ratio = getattr(
-            args, 'hh_ratio', None)
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.recent_ratio = getattr(
-            args, 'recent_ratio', None)
-        # The budget ratio allocated to cross-attention. The default value is 0.1
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.cross_ratio = getattr(
-            args, 'cross_ratio', 0.1)
-        # The kv_recent_bias setting is how many times you want the recent window to be larger than the original window. The default value is 1, which means no additional increase in the window size.
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.kv_recent_bias = getattr(
-            args, 'kv_recent_bias', 1)
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = getattr(
-            args, 'budgets', None)
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.csp_head_adaptive = args.csp_head_adaptive
+    # elif method == "csp":
+    #     print('using csp')
+    #     transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_CSP
+    #     transformers.models.qwen2.modeling_qwen2.Qwen2Attention.hh_ratio = getattr(
+    #         args, 'hh_ratio', None)
+    #     transformers.models.qwen2.modeling_qwen2.Qwen2Attention.recent_ratio = getattr(
+    #         args, 'recent_ratio', None)
+    #     # The budget ratio allocated to cross-attention. The default value is 0.1
+    #     transformers.models.qwen2.modeling_qwen2.Qwen2Attention.cross_ratio = getattr(
+    #         args, 'cross_ratio', 0.1)
+    #     # The kv_recent_bias setting is how many times you want the recent window to be larger than the original window. The default value is 1, which means no additional increase in the window size.
+    #     transformers.models.qwen2.modeling_qwen2.Qwen2Attention.kv_recent_bias = getattr(
+    #         args, 'kv_recent_bias', 1)
+    #     transformers.models.qwen2.modeling_qwen2.Qwen2Attention.budgets = getattr(
+    #         args, 'budgets', None)
+    #     transformers.models.qwen2.modeling_qwen2.Qwen2Attention.csp_head_adaptive = args.csp_head_adaptive
 
     elif method == 'pyramidkv':
         print('using pyramidkv')
@@ -185,7 +185,7 @@ def replace_qwen(args, model, method):
         from llava.model.multimodal_encoder.siglip_encoder import SigLipVisionTower
         from llava.model.language_model.llava_qwen import LlavaQwenForCausalLM
         from llava.model.llava_arch import LlavaMetaForCausalLM
-        SigLipVisionTower.budgets = getattr(args, 'budgets', None)
+        SigLipVisionTower.budgets = getattr(args, 'budgets', 1.0)
         SigLipVisionTower.forward = siglip_vision_tower_forward_prumerge_plus
         LlavaMetaForCausalLM.encode_images_prumerge_plus = encode_images_prumerge_plus
         LlavaMetaForCausalLM.encode_images_prumerge_plus_simple = encode_images_prumerge_plus_simple
@@ -279,29 +279,29 @@ def replace_qwen2vl(args, model, method):
         for name, module in model.named_modules():
             if isinstance(module, Qwen2VLFlashAttention2):
                 module.forward = types.MethodType(qwen_flash_attention_forward_vlcache, module)
-                module.vlcache_alpha_sparsity = args.budgets
-                module.vlcache_different_window_per_layer = args.vlcache_different_window_per_layer
-                module.vlcache_head_adaptive = args.vlcache_head_adaptive
-                module.vlcache_budget_layer_adaptive = getattr(args, 'vlcache_budget_layer_adaptive', True)
+                module.vlcache_alpha_sparsity = getattr(args,'budgets',1.0)
+                module.vlcache_different_window_per_layer = getattr(args,'vlcache_different_window_per_layer',False)
+                module.vlcache_head_adaptive = getattr(args,'head_adaptive',False)
+                module.vlcache_budget_layer_adaptive = getattr(args, 'layer_adaptive', True)
             if isinstance(module, Qwen2VLModel):
                 module.forward = types.MethodType(qwen2vl_model_forward_vlcache, module)
 
-    elif method == "csp":
-        print('using csp')
-        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_CSP
-        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.hh_ratio = getattr(args, 'hh_ratio', None)
-        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.recent_ratio = getattr(args, 'recent_ratio', None)
-        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.cross_ratio = getattr(args, 'cross_ratio', 0.1)
-        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.kv_recent_bias = getattr(args, 'kv_recent_bias', 1)
-        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = getattr(args, 'budgets', None)
-        qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.csp_head_adaptive = args.csp_head_adaptive
+    # elif method == "csp":
+    #     print('using csp')
+    #     qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.forward = qwen_flash_attention_forward_CSP
+    #     qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.hh_ratio = getattr(args, 'hh_ratio', None)
+    #     qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.recent_ratio = getattr(args, 'recent_ratio', None)
+    #     qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.cross_ratio = getattr(args, 'cross_ratio', 0.1)
+    #     qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.kv_recent_bias = getattr(args, 'kv_recent_bias', 1)
+    #     qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.budgets = getattr(args, 'budgets', None)
+    #     qwen2vl.modeling_qwen2_vl.Qwen2VLFlashAttention2.csp_head_adaptive = args.csp_head_adaptive
 
     elif method == 'prumerge+':
         print('using prumerge+')
         qwen2vl.modeling_qwen2_vl.VisionFlashAttention2.forward = qwen2vl_vision_flash_attention2_forward_prumerge_plus
         qwen2vl.modeling_qwen2_vl.Qwen2VisionTransformerPretrainedModel.forward = qwen2vl_vision_tower_forward_prumerge_plus
         qwen2vl.modeling_qwen2_vl.Qwen2VLVisionBlock.forward = qwen2vl_vision_block_forward_prumerge_plus
-        qwen2vl.modeling_qwen2_vl.Qwen2VisionTransformerPretrainedModel.budgets = getattr(args, 'budgets', 0.01)
+        qwen2vl.modeling_qwen2_vl.Qwen2VisionTransformerPretrainedModel.budgets = getattr(args, 'budgets', 1.0)
         qwen2vl.modeling_qwen2_vl.Qwen2VLForConditionalGeneration.forward = qwen2vl_generation_forward_prumerge_plus
 
 def replace_internvl2_5(args, model, method):
@@ -351,11 +351,10 @@ def replace_qwen_for_internvl(args, model, method):
         print('using vlcache')
         transformers.models.qwen2.modeling_qwen2.Qwen2Attention.forward = qwen_attention_forward_vlcache
         transformers.models.qwen2.modeling_qwen2.Qwen2Model.forward = qwen_model_forward_vlcache
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_alpha_sparsity = args.budgets
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_different_window_per_layer = args.vlcache_different_window_per_layer
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_head_adaptive = args.vlcache_head_adaptive
-        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_budget_layer_adaptive = getattr(
-            args, 'vlcache_budget_layer_adaptive', True)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_alpha_sparsity = getattr(args,'budgets',1.0)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_different_window_per_layer = getattr(args,'vlcache_different_window_per_layer',False)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_head_adaptive = getattr(args,'head_adaptive',False)
+        transformers.models.qwen2.modeling_qwen2.Qwen2Attention.vlcache_budget_layer_adaptive = getattr(args, 'layer_adaptive', True)
 
     elif method == 'look-m':
         print('using look-m')
@@ -454,10 +453,10 @@ def replace_qwen_for_internvl_38B(args, model, method):
         for name, module in model.named_modules():
             if isinstance(module, Qwen2Attention):
                 module.forward = types.MethodType(qwen_attention_forward_vlcache, module)
-                module.vlcache_alpha_sparsity = args.budgets
-                module.vlcache_different_window_per_layer = args.vlcache_different_window_per_layer
-                module.vlcache_head_adaptive = args.vlcache_head_adaptive
-                module.vlcache_budget_layer_adaptive = getattr(args, 'vlcache_budget_layer_adaptive', True)
+                module.vlcache_alpha_sparsity = getattr(args,'budgets',1.0)
+                module.vlcache_different_window_per_layer = getattr(args,'vlcache_different_window_per_layer',False)
+                module.vlcache_head_adaptive = getattr(args,'head_adaptive',False)
+                module.vlcache_budget_layer_adaptive = getattr(args, 'layer_adaptive', True)
             if isinstance(module, Qwen2Model):
                 module.forward = types.MethodType(qwen_model_forward_vlcache, module)
 
@@ -530,7 +529,7 @@ def replace_qwen_for_internvl_38B(args, model, method):
             layer.attn._naive_attn = types.MethodType(internvl_naive_attn_38B_prumerge_plus, layer.attn)
         model.generate = types.MethodType(internvl_generate_38B_prumerge_plus, model)
         model.extract_feature = types.MethodType(internvl_extract_feature_38B_prumerge_plus, model)
-        model.budgets = getattr(args, 'budgets', None)
+        model.budgets = getattr(args, 'budgets', 1.0)
 
 def replace_mistral(method):
     pass

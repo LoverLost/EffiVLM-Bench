@@ -418,7 +418,6 @@ def outlier_dectection_prumerge_plus(attn):
         ratio = len(outlier_indices) / len(cur_attn)
         ratios.append(ratio)
     
-    # 返回每个batch的ratio平均值
     return sum(ratios) / len(ratios)
 
 def complement_idx_prumerge_plus(idx, dim):
@@ -467,10 +466,10 @@ def internvl_naive_attn_4B_prumerge_plus(self, x):
 
 
 def internvl_attention_forward_4B_prumerge_plus(self, hidden_states: torch.Tensor) -> torch.Tensor:
-        x = self._naive_attn(hidden_states)   # NOTE 此处强制使用naive attn
+        x = self._naive_attn(hidden_states) 
         return x
 
-def internvl_extract_feature_4B_prumerge_plus(self, pixel_values):   # 编码视觉部分
+def internvl_extract_feature_4B_prumerge_plus(self, pixel_values):
     if self.select_layer == -1:
         vit_embeds = self.vision_model(
             pixel_values=pixel_values,
@@ -618,19 +617,13 @@ def internvl_generate_4B_prumerge_plus(self,
             vit_embeds = visual_features
         else:
             vit_embeds = self.extract_feature(pixel_values)
-        assert input_ids.shape[0] == 1, '当前只支持一个batch'
+        assert input_ids.shape[0] == 1, 'Currently only one batch is supported'
         num_visual_tokens = vit_embeds.shape[1] * vit_embeds.shape[0]
-         # 将 input_ids 转为一维张量，方便后续操作
         input_ids_flat = input_ids[0]  # shape: [seq_len]
-        # 找出视觉 token（即占位符）所在位置，假设 self.img_context_token_id 对应的数字为151667
         visual_positions = (input_ids_flat == self.img_context_token_id).nonzero(as_tuple=False).flatten()
-        # 如果视觉 token 占位符数量超过实际视觉 token 数量，则只保留前 num_visual_tokens 个
         if visual_positions.numel() > num_visual_tokens:
-            # 构造掩码，初始全部为 True
             mask = torch.ones_like(input_ids_flat, dtype=torch.bool)
-            # 将多余的视觉 token 占位符对应位置置为 False
             mask[visual_positions[num_visual_tokens:]] = False
-            # 根据掩码过滤 input_ids，并还原 shape 为 [1, new_seq_len]
             input_ids = input_ids_flat[mask].unsqueeze(0)
 
         input_embeds = self.language_model.get_input_embeddings()(input_ids)
@@ -699,7 +692,7 @@ def internvl_attention_forward_38B_prumerge_plus(self, hidden_states: torch.Tens
         return x
 
 
-def internvl_extract_feature_38B_prumerge_plus(self, pixel_values):   # 编码视觉部分
+def internvl_extract_feature_38B_prumerge_plus(self, pixel_values):
     if self.select_layer == -1:
         vit_embeds = self.vision_model(
             pixel_values=pixel_values,
@@ -849,19 +842,13 @@ def internvl_generate_38B_prumerge_plus(
             vit_embeds = visual_features
         else:
             vit_embeds = self.extract_feature(pixel_values)
-        assert input_ids.shape[0] == 1, '当前只支持一个batch'
+        assert input_ids.shape[0] == 1, 'Currently only one batch is supported'
         num_visual_tokens = vit_embeds.shape[1] * vit_embeds.shape[0]
-         # 将 input_ids 转为一维张量，方便后续操作
         input_ids_flat = input_ids[0]  # shape: [seq_len]
-        # 找出视觉 token（即占位符）所在位置，假设 self.img_context_token_id 对应的数字为151667
         visual_positions = (input_ids_flat == self.img_context_token_id).nonzero(as_tuple=False).flatten()
-        # 如果视觉 token 占位符数量超过实际视觉 token 数量，则只保留前 num_visual_tokens 个
         if visual_positions.numel() > num_visual_tokens:
-            # 构造掩码，初始全部为 True
             mask = torch.ones_like(input_ids_flat, dtype=torch.bool)
-            # 将多余的视觉 token 占位符对应位置置为 False
             mask[visual_positions[num_visual_tokens:]] = False
-            # 根据掩码过滤 input_ids，并还原 shape 为 [1, new_seq_len]
             input_ids = input_ids_flat[mask].unsqueeze(0)
 
         input_embeds = self.language_model.get_input_embeddings()(input_ids)
