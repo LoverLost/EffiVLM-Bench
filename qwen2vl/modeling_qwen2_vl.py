@@ -53,6 +53,7 @@ from transformers.utils import (
 from qwen2vl.configuration_qwen2_vl import Qwen2VLConfig, Qwen2VLVisionConfig
 
 
+
 if is_flash_attn_2_available():
     from flash_attn import flash_attn_varlen_func
 
