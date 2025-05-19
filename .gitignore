@@ -60,7 +60,6 @@ scripts/hf_download.sh
 scripts/zk_scripts
 scripts/
 /data
-*.yaml
 *.out
 models/prune
 models/quant
