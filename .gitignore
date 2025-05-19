@@ -71,3 +71,11 @@ test-clash.sh
 test.sh
 lmms-eval/lmms_eval/tasks
 *.sh
+1.sh
+visualization/
+test.py
+
+
+
+pruner/
+quant/
